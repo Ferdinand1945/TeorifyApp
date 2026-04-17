@@ -6,8 +6,8 @@ import { Pressable, Text } from "react-native";
 
 export default function Index() {
   return (
-    <SafeScreen>
-      <Text className="text-xl font-bold text-blue-500">Welcome to Nativewind!</Text>
+    <SafeScreen className="p-5">
+      <Text className="text-xl font-bold text-blue-500 font-sans-bold">Welcome to Nativewind!</Text>
 
       <Link href="/onboarding" asChild>
         <Pressable className="mt-4 rounded bg-blue-500 px-4 py-3">
