@@ -1,12 +1,12 @@
+import { SafeScreen } from '@/components/SafeScreen'
 import React from 'react'
-import { Text, View } from 'react-native'
-
-const settings = () => {
+import { Text } from 'react-native'
+const Settings = () => {
   return (
-    <View>
-      <Text>settings</Text>
-    </View>
+    <SafeScreen>
+      <Text>Settongs</Text>
+    </SafeScreen>
   )
 }
 
-export default settings
+export default Settings

@@ -1,11 +1,13 @@
+import { SafeScreen } from '@/components/SafeScreen'
 import React from 'react'
-import { Text, View } from 'react-native'
+import { Text } from 'react-native'
 
 const Subscriptions = () => {
   return (
-    <View>
+    <SafeScreen>
+
       <Text>subscriptions</Text>
-    </View>
+    </SafeScreen>
   )
 }
 

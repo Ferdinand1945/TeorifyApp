@@ -1,11 +1,12 @@
+import { SafeScreen } from '@/components/SafeScreen'
 import React from 'react'
-import { Text, View } from 'react-native'
-
+import { Text } from 'react-native'
+        
 const Insights = () => {
   return (
-    <View>
+    <SafeScreen>
       <Text>insights</Text>
-    </View>
+    </SafeScreen>
   )
 }
 
