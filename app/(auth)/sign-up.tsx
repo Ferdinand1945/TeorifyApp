@@ -5,6 +5,7 @@ import React, { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -140,7 +141,11 @@ export default function Page() {
         if (session?.currentTask) return;
         const url = decorateUrl("/(tabs)");
         if (url.startsWith("http")) {
-          window.location.href = url;
+          if (Platform.OS === "web") {
+            window.location.href = url;
+          } else {
+            void Linking.openURL(url);
+          }
         } else {
           router.push(url as Href);
         }
