@@ -77,9 +77,8 @@ export default function Page() {
     const raw = input.trim().replace(/\s+/g, "");
     if (!raw) return "";
     if (raw.startsWith("+")) return raw;
-    // Best-effort: if user enters a Swedish-style local number starting with 0,
-    // convert to +46… (matches the UI hint).
-    if (raw.startsWith("0")) return `+46${raw.slice(1)}`;
+    // Numbers without country code are ambiguous; require explicit country code
+    // rather than assuming a specific locale.
     return raw;
   }
 
