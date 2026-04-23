@@ -109,7 +109,11 @@ export default function Page() {
         (factor) => factor.strategy === "email_code",
       );
       if (emailCodeFactor) {
-        await signIn.mfa.sendEmailCode();
+        try {
+          await signIn.mfa.sendEmailCode();
+        } catch {
+          setSubmitError("We couldn't send the verification code. Please try again.");
+        }
       } else {
         setSubmitError("Additional verification is required. Please try again.");
       }
