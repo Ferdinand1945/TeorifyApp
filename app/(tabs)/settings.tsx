@@ -17,6 +17,13 @@ export default function Settings() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * Initiates the sign-out flow, updates the component's submitting state while the operation runs,
+   * and records a user-facing error message if sign-out fails.
+   *
+   * On failure, sets the error state to the caught error's `message` when the error is an `Error`,
+   * otherwise sets `"Could not sign out. Please try again."`. Always resets the submitting state when finished.
+   */
   async function onSignOut() {
     setError(null);
     try {
