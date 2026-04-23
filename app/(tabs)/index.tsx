@@ -7,11 +7,13 @@ import UpcomingSubscriptionCard from "@/components/UpcomingSubscriptionCard";
 import { HOME_BALANCE, HOME_SUBSCRIPTIONS, HOME_USER, UPCOMING_SUBSCRIPTIONS } from "@/constants/data";
 import images from "@/constants/images";
 import { formatCurrency } from "@/lib/utils";
+import { useUser } from "@clerk/expo";
 import dayjs from "dayjs";
 import { useState } from "react";
 import { FlatList, Image, Text, View } from "react-native";
 export default function Index() {
   const [expandedSubscription, setExpandedSubscription] = useState<string | null>(null);
+  const { user } = useUser()
   return (
     <SafeScreen className="flex-1 bg-background p-5"> 
       <View>
@@ -20,8 +22,8 @@ export default function Index() {
         <>
         <View className="home-header">
         <View className="home-user">
-          <Image source={images.avatar} className="home-avatar" />
-          <Text className="home-user-name">{HOME_USER.name}</Text>
+          <Image source={{ uri: user?.imageUrl }} className="home-avatar" />
+          {user?.fullName ? <Text className="home-user-name">{user?.fullName}</Text> : <Text className="home-user-name">{user?.primaryEmailAddress?.emailAddress}</Text>}
         </View> 
         <Image source={images.add} className="home-add-icon" />
         </View>
