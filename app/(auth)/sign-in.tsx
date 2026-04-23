@@ -128,12 +128,19 @@ export default function Page() {
     setSubmitError(null);
     if (!canVerify) return;
 
-    await signIn.mfa.verifyEmailCode({ code: code.trim() });
-
-    if (signIn.status === "complete") {
-      await finalizeToTabs();
-    } else {
-      setSubmitError("That code didn’t work. Please try again.");
+    try {
+      const result = await signIn.mfa.verifyEmailCode({ code: code.trim() });
+      if (result?.error) {
+        setSubmitError(result.error.message ?? "That code didn't work. Please try again.");
+        return;
+      }
+      if (signIn.status === "complete") {
+        await finalizeToTabs();
+      } else {
+        setSubmitError("That code didn't work. Please try again.");
+      }
+    } catch {
+      setSubmitError("That code didn't work. Please try again.");
     }
   };
 
