@@ -73,6 +73,14 @@ export default function Page() {
     unverifiedFields.includes("captcha") ||
     signUpStatus.includes("captcha");
 
+  /**
+   * Normalize a phone number string to a best-effort E.164-like format.
+   *
+   * Trims and removes internal whitespace. If the cleaned value is empty, returns an empty string. If it starts with '+', returns it unchanged. If it starts with '0', converts it to a Swedish-style E.164 form by replacing the leading '0' with '+46'. Otherwise returns the cleaned input unchanged.
+   *
+   * @param input - The phone number string to normalize
+   * @returns The normalized phone number (empty string, a value starting with '+', or the cleaned raw input)
+   */
   function normalizePhoneToE164(input: string) {
     const raw = input.trim().replace(/\s+/g, "");
     if (!raw) return "";
@@ -241,6 +249,16 @@ export default function Page() {
     return null;
   }
 
+  /**
+   * Submit any Clerk-required profile fields (first name, last name, username, phone) to complete sign-up.
+   *
+   * Validates and normalizes the phone number to E.164 (must start with `+`) and sets a user-facing error if invalid.
+   * Sends collected fields to Clerk via `signUp.update` when present; if the sign-up becomes complete the function
+   * navigates to the app's main tabs. If Clerk still requires email verification, the flow returns to the verify step.
+   *
+   * The function sets and clears the component's submitting and submitError state and includes a built-in
+   * workaround for occasional SDK JSON-parse errors by attempting to reload the sign-up resource before failing.
+   */
   async function handleSubmitRequirements() {
     setSubmitError(null);
     try {
