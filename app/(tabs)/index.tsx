@@ -11,6 +11,13 @@ import { useUser } from "@clerk/expo";
 import dayjs from "dayjs";
 import { useState } from "react";
 import { FlatList, Image, Text, View } from "react-native";
+/**
+ * Renders the home screen with user header, balance summary, upcoming subscriptions, and a list of all subscriptions.
+ *
+ * The component sources the authenticated user from Clerk for the avatar and display name, manages which subscription card is expanded, and presents upcoming subscriptions in a horizontal list and all subscriptions in a vertical list.
+ *
+ * @returns The JSX element for the home screen layout
+ */
 export default function Index() {
   const [expandedSubscription, setExpandedSubscription] = useState<string | null>(null);
   const { user } = useUser()

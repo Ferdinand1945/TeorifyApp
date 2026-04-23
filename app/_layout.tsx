@@ -6,6 +6,11 @@ import React, { useEffect } from "react";
 import "../global.css";
 const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY!
 
+/**
+ * Root layout component that loads custom Plus Jakarta Sans fonts, hides the splash screen once fonts are ready, and provides Clerk authentication context for the app's navigation stack.
+ *
+ * @returns The React element containing a `ClerkProvider` that wraps the app's `Stack` navigation.
+ */
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
     "PlusJakartaSans-Regular": require("../assets/fonts/PlusJakartaSans-Regular.ttf"),

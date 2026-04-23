@@ -3,6 +3,14 @@ import { useClerk, useUser } from "@clerk/expo";
 import React, { useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 
+/**
+ * Renders the Settings screen showing the current user's email and a sign-out control.
+ *
+ * Displays the signed-in user's primary email (or "—" if unavailable), provides a "Sign out" button
+ * that shows a loading indicator while sign-out is in progress, and displays any sign-out error message.
+ *
+ * @returns A React element rendering the settings screen UI.
+ */
 export default function Settings() {
   const { signOut } = useClerk();
   const { user } = useUser();

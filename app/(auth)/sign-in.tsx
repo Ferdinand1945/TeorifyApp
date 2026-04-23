@@ -13,10 +13,24 @@ import {
   View,
 } from "react-native";
 
+/**
+ * Validates whether a string is a well-formed email address.
+ *
+ * @param value - The email address to validate; leading and trailing whitespace are ignored.
+ * @returns `true` if the trimmed input matches a basic email pattern, `false` otherwise.
+ */
 function isValidEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
+/**
+ * Render the sign-in page and manage email/password authentication and email-code verification flows.
+ *
+ * Manages input state, validation, Clerk sign-in actions (password submit, send/verify email code, reset),
+ * submission error reporting, loading state, and navigation to the app's main tabs after successful sign-in.
+ *
+ * @returns The JSX element for the sign-in page.
+ */
 export default function Page() {
   const { signIn, errors, fetchStatus } = useSignIn();
   const router = useRouter();

@@ -13,12 +13,29 @@ import {
   View,
 } from "react-native";
 
+/**
+ * Validates whether a string is a syntactically valid email address.
+ *
+ * @param value - The input string; leading and trailing whitespace are ignored before validation.
+ * @returns `true` if the trimmed string matches a basic `local@domain.tld` email pattern, `false` otherwise.
+ */
 function isValidEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
 type Step = "form" | "verify";
 
+/**
+ * Render the multi-step signup page that orchestrates user creation, email verification,
+ * and any additional profile requirements using Clerk.
+ *
+ * The component manages local validation and UI state across the "form", "verify",
+ * and "requirements" steps, invokes Clerk signUp methods to create accounts, send and
+ * verify email codes, update missing profile fields, and finalizes navigation to the
+ * app tabs when signup completes.
+ *
+ * @returns The signup page React element, or `null` when signup is already complete or the user is signed in.
+ */
 export default function Page() {
   const { signUp, errors, fetchStatus } = useSignUp();
   const { isSignedIn } = useAuth();
