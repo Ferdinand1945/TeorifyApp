@@ -66,6 +66,8 @@ export default function Index() {
   useEffect(() => {
     if (!isLoaded) return
     if (!isSignedIn) {
+      setSubs([])
+      setRefreshing(false)
       setLoading(false)
       setError("Please sign in to view subscriptions.")
       return
