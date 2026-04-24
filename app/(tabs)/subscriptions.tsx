@@ -1,7 +1,7 @@
 import { SafeScreen } from '@/components/SafeScreen'
 import SubscriptionCard from '@/components/SubscriptionCard'
 import { icons } from '@/constants/icons'
-import { useAuthedFetch } from '@/hooks/useAuthedFetch'
+import { invalidateApiCache, useAuthedFetch } from '@/hooks/useAuthedFetch'
 import { useAuth } from '@clerk/expo'
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
@@ -51,6 +51,7 @@ const Subscriptions = () => {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editing, setEditing] = useState<ApiSubscription | null>(null)
@@ -225,15 +226,31 @@ const Subscriptions = () => {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
+            let watchdogId: ReturnType<typeof setTimeout> | null = null
             try {
+              setDeletingId(sub._id)
+              watchdogId = setTimeout(() => {
+                setDeletingId((cur) => (cur === sub._id ? null : cur))
+              }, 20_000)
+                  // eslint-disable-next-line no-console
+                  console.log('[subscriptions] deleting', sub._id)
               const res = await authedFetch(`/subscriptions/${sub._id}`, { method: 'DELETE' })
+                  // eslint-disable-next-line no-console
+                  console.log('[subscriptions] delete response', res.status)
               if (!res.ok && res.status !== 204) {
                 const txt = await res.text()
                 throw new Error(txt || `Request failed (${res.status})`)
               }
+              setExpandedSubscription((cur) => (cur === sub._id ? null : cur))
+              invalidateApiCache(['/subscriptions', '/summary'])
               await load()
+              Alert.alert('Deleted', `${sub.name} was deleted.`)
             } catch (e) {
-              Alert.alert('Delete failed', e instanceof Error ? e.message : 'Unknown error')
+              const msg = e instanceof Error ? e.message : 'Unknown error'
+              Alert.alert('Delete failed', msg.includes('aborted') ? 'Request timed out. Check EXPO_PUBLIC_API_URL.' : msg)
+            } finally {
+              if (watchdogId) clearTimeout(watchdogId)
+              setDeletingId(null)
             }
           },
         },
@@ -267,8 +284,9 @@ const Subscriptions = () => {
             }}
             onDeletePress={() => {
               const sub = items.find((s) => s._id === item.id)
-              if (sub) deleteOne(sub)
+              if (sub && !deletingId) deleteOne(sub)
             }}
+            isDeleting={deletingId === item.id}
             {...item}
           />
         )}

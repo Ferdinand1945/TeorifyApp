@@ -9,6 +9,8 @@ import { clerkJwt } from './middleware/clerkJwt.js'
 import { requireUser } from './middleware/requireUser.js'
 import { errorHandler } from './middleware/errorHandler.js'
 import categoriesRouter from './routes/categories.js'
+import spendsRouter from './routes/spends.js'
+import summaryRouter from './routes/summary.js'
 import subscriptionsRouter from './routes/subscriptions.js'
 
 /**
@@ -22,6 +24,8 @@ async function main() {
   await connectToDatabase()
 
   const app = express()
+  // Avoid conditional GET 304 responses for JSON APIs (no ETags).
+  app.set('etag', false)
 
   app.use(helmet())
   const allowedOrigins = (env.CORS_ORIGIN ?? '')
@@ -49,6 +53,8 @@ async function main() {
 
   app.use('/subscriptions', subscriptionsRouter)
   app.use('/categories', categoriesRouter)
+  app.use('/spends', spendsRouter)
+  app.use('/summary', summaryRouter)
 
   app.use(errorHandler)
 

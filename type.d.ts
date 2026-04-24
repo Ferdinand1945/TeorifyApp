@@ -33,6 +33,7 @@ declare global {
         onPress: () => void;
         onEditPress?: () => void;
         onDeletePress?: () => void;
+        isDeleting?: boolean;
         onCancelPress?: () => void;
         isCancelling?: boolean;
     }
