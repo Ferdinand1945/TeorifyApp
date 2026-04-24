@@ -198,7 +198,7 @@ const Subscriptions = () => {
       nextBillingDate: form.nextBillingDate.trim(),
       categoryId: form.categoryId,
       notes: form.notes.trim() ? form.notes.trim() : null,
-      isActive: true,
+      ...(editing ? { isActive: editing.isActive } : { isActive: true }),
     }
 
     try {
