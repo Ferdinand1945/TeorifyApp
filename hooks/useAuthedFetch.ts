@@ -13,6 +13,13 @@ type CachedResponse = {
 
 const getCache = new Map<string, CachedResponse>()
 
+/**
+ * Invalidate cached GET API responses either completely or selectively by URL prefix.
+ *
+ * If `prefixes` is empty, the entire in-memory GET response cache is cleared.
+ *
+ * @param prefixes - Array of URL substrings; any cache entries whose key includes at least one prefix will be deleted
+ */
 export function invalidateApiCache(prefixes: string[] = []) {
   if (prefixes.length === 0) {
     getCache.clear()
@@ -23,6 +30,13 @@ export function invalidateApiCache(prefixes: string[] = []) {
   }
 }
 
+/**
+ * Determines whether a request is eligible for the in-memory GET cache.
+ *
+ * @param url - Full request URL to check for cacheable API paths
+ * @param init - `RequestInit` used to determine the HTTP method (defaults to `GET`)
+ * @returns `true` if the method is `GET` and the URL contains one of `/subscriptions`, `/categories`, `/spends`, or `/summary`; `false` otherwise.
+ */
 function shouldCacheGet(url: string, init: RequestInit) {
   const method = (init.method || 'GET').toUpperCase()
   if (method !== 'GET') return false
@@ -36,14 +50,11 @@ function shouldCacheGet(url: string, init: RequestInit) {
 }
 
 /**
- * React hook that provides a fetch wrapper which prefixes requests with the API base URL,
- * sets `Content-Type: application/json`, preserves caller headers, and includes an
- * `Authorization: Bearer <token>` header when an auth token is available.
+ * Provides a fetch wrapper that prefixes requests with the API base URL and applies authentication, JSON content-type defaults, short-lived GET caching, a single 401 retry with token refresh, and a request timeout.
  *
- * @returns A function `(path: string, init?: RequestInit) => Promise<Response>` that performs a `fetch` to the API base URL plus `path`. The request:
- * - sets the `Content-Type` to `application/json`
- * - merges any headers from `init.headers`
- * - includes `Authorization: Bearer <token>` when a token is present
+ * The returned function preserves caller headers, sets `Content-Type: application/json` when the body is JSON-ish and no content type is present, adds `Authorization: Bearer <token>` when a token is available, and may return cached successful GET responses for a short TTL. In development it logs requests and uses a shorter timeout.
+ *
+ * @returns A function `(path: string, init?: RequestInit) => Promise<Response>` that performs the request to the API base URL plus `path` and resolves to the final `Response`.
  */
 export function useAuthedFetch() {
   const { getToken } = useAuth()
