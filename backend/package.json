@@ -12,6 +12,7 @@
     "@clerk/backend": "^3.3.0",
     "@clerk/express": "^2.1.7",
     "cors": "^2.8.5",
+    "dayjs": "^1.11.20",
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
     "helmet": "^8.1.0",

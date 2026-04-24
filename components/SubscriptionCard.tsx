@@ -1,7 +1,7 @@
 import { formatCurrency, formatStatusLabel, formatSubscriptionDateTime } from '@/lib/utils'
 import clsx from 'clsx'
 import React from 'react'
-import { Image, Pressable, Text, View } from 'react-native'
+import { ActivityIndicator, Image, Pressable, Text, View } from 'react-native'
 
 const SubscriptionCard = ({
   name,
@@ -20,6 +20,7 @@ const SubscriptionCard = ({
   onPress,
   onEditPress,
   onDeletePress,
+  isDeleting,
 }: SubscriptionCardProps) => {
   return (
     <Pressable onPress={onPress} className={clsx('sub-card', 'bg-card', expanded && 'sub-card-expanded')} style={!expanded && color ? { backgroundColor: color } : undefined}>
@@ -74,13 +75,31 @@ const SubscriptionCard = ({
         {(onEditPress || onDeletePress) && (
           <View className="flex-row gap-3 mt-4">
             {onEditPress && (
-              <Pressable onPress={onEditPress} className="flex-1 rounded-xl bg-white/20 px-4 py-3">
-                <Text className="text-center text-white font-semibold">Edit</Text>
+              <Pressable
+                onPress={(e) => {
+                  // Some RN environments don't support stopPropagation.
+                  // Guard to avoid breaking the handler.
+                  e?.stopPropagation?.()
+                  onEditPress()
+                }}
+                className="flex-1 rounded-xl bg-background/90 px-4 py-3 border border-border"
+              >
+                <Text className="text-center text-primary font-semibold">Edit</Text>
               </Pressable>
             )}
             {onDeletePress && (
-              <Pressable onPress={onDeletePress} className="flex-1 rounded-xl bg-black/20 px-4 py-3">
-                <Text className="text-center text-white font-semibold">Delete</Text>
+              <Pressable
+                onPress={(e) => {
+                  e?.stopPropagation?.()
+                  onDeletePress()
+                }}
+                disabled={Boolean(isDeleting)}
+                className={Boolean(isDeleting) ? "flex-1 rounded-xl bg-destructive/70 px-4 py-3" : "flex-1 rounded-xl bg-destructive px-4 py-3"}
+              >
+                <View className="flex-row items-center justify-center gap-2">
+                  {isDeleting && <ActivityIndicator color="#fff" />}
+                  <Text className="text-center text-white font-semibold">{isDeleting ? "Deleting…" : "Delete"}</Text>
+                </View>
               </Pressable>
             )}
           </View>
