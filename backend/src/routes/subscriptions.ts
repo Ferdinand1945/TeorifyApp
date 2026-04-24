@@ -10,7 +10,7 @@ const router = Router()
 const billingCycleSchema = z.enum(['weekly', 'monthly', 'yearly'])
 
 const subscriptionCreateSchema = z.object({
-  name: z.string().min(1).max(120),
+  name: z.string().trim().min(1).max(120),
   amountCents: z.number().int().min(0),
   currency: z.string().min(3).max(3),
   billingCycle: billingCycleSchema,
