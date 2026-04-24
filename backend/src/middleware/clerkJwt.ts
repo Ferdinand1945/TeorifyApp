@@ -11,7 +11,7 @@ import { env } from '../env.js'
 export async function clerkJwt(req: Request, _res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization
   const bearer =
-    typeof authHeader === 'string' && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null
+    typeof authHeader === 'string' ? authHeader.match(/^Bearer\s+(.+)$/i)?.[1]?.trim() ?? null : null
 
   if (!bearer) {
     req.auth = { userId: null }
