@@ -25,10 +25,17 @@ async function main() {
 
   app.use(helmet())
   app.use(
-    cors({
-      origin: env.CORS_ORIGIN ? env.CORS_ORIGIN.split(',').map((s) => s.trim()) : true,
-      credentials: true,
-    }),
+const allowedOrigins = (env.CORS_ORIGIN ?? '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean)
+
+app.use(
+  cors({
+    origin: allowedOrigins.length > 0 ? allowedOrigins : env.NODE_ENV === 'development',
+    credentials: true,
+  }),
+)
   )
   app.use(express.json({ limit: '1mb' }))
   app.use(morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev'))
