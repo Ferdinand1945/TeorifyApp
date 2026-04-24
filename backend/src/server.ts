@@ -11,6 +11,13 @@ import { errorHandler } from './middleware/errorHandler.js'
 import categoriesRouter from './routes/categories.js'
 import subscriptionsRouter from './routes/subscriptions.js'
 
+/**
+ * Initialize the application: connect to the database, configure middleware, register routes, and start the HTTP server.
+ *
+ * Sets up security, CORS, JSON body parsing, request logging, and authentication middleware; exposes the `/health`
+ * and `/me` endpoints; mounts the subscriptions and categories routers; registers a global error handler; and begins
+ * listening on the configured port.
+ */
 async function main() {
   await connectToDatabase()
 

@@ -1,8 +1,13 @@
 import type { Request, Response, NextFunction } from 'express'
 
 /**
- * After Clerk middleware runs, `req.auth` exists when a Bearer token is valid.
- * We enforce that every request has a `userId` and attach it for convenience.
+ * Ensures the request has an authenticated user ID; if present attaches it to `req.userId` and continues, otherwise responds with HTTP 401.
+ *
+ * If `req.auth?.userId` is missing the middleware inspects the `Authorization` header and (when present) attempts to decode the JWT payload to extract claim values for logging. It logs a warning with header and available token claim metadata, then responds with JSON `{ error: 'UNAUTHORIZED', reason: 'INVALID_OR_MISSING_SESSION' }` when an authorization header exists, or `{ error: 'UNAUTHORIZED', reason: 'MISSING_AUTHORIZATION_HEADER' }` when it does not.
+ *
+ * Side effects:
+ * - On success, assigns `userId` to `req.userId` and calls `next()`.
+ * - On failure, sends a 401 response and does not call `next()`.
  */
 export function requireUser(req: Request, res: Response, next: NextFunction) {
   const userId = req.auth?.userId

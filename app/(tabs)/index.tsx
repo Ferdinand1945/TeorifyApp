@@ -29,11 +29,11 @@ type ApiSubscription = {
   updatedAt: string;
 };
 /**
- * Renders the home screen with user header, balance summary, upcoming subscriptions, and a list of all subscriptions.
+ * Render the authenticated home screen showing the user header, balance summary, upcoming subscriptions (horizontal), and all subscriptions (vertical).
  *
- * The component sources the authenticated user from Clerk for the avatar and display name, manages which subscription card is expanded, and presents upcoming subscriptions in a horizontal list and all subscriptions in a vertical list.
+ * The component loads subscriptions from the authenticated API, gates fetching on Clerk auth state, manages expansion state for subscription cards, and provides pull-to-refresh and empty/error states.
  *
- * @returns The JSX element for the home screen layout
+ * @returns The JSX element for the home screen
  */
 export default function Index() {
   const [expandedSubscription, setExpandedSubscription] = useState<string | null>(null);

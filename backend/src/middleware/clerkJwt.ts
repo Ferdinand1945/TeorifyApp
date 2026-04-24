@@ -3,6 +3,11 @@ import { verifyToken } from '@clerk/backend'
 
 import { env } from '../env.js'
 
+/**
+ * Middleware that authenticates a Bearer token from the Authorization header and attaches the resolved user id to `req.auth`.
+ *
+ * If no Bearer token is present, `req.auth.userId` is set to `null`. If a token is present, it is verified with Clerk using the configured secret key and a 60‑second clock skew allowance; on successful verification `req.auth.userId` is set to the token's `sub` value when that value is a string, otherwise `null`. On verification failure `req.auth.userId` is set to `null`. The middleware always calls `next()` when finished.
+ */
 export async function clerkJwt(req: Request, _res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization
   const bearer =

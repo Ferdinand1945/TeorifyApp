@@ -27,13 +27,11 @@ function isValidEmail(value: string) {
 type Step = "form" | "verify";
 
 /**
- * Render the multi-step signup page that orchestrates user creation, email verification,
- * and any additional profile requirements using Clerk.
+ * Multi-step signup page that handles account creation, email verification, and any additional profile requirements.
  *
- * The component manages local validation and UI state across the "form", "verify",
- * and "requirements" steps, invokes Clerk signUp methods to create accounts, send and
- * verify email codes, update missing profile fields, and finalizes navigation to the
- * app tabs when signup completes.
+ * Renders a form to create a new account, a verification step to confirm the user's email, and a requirements step
+ * to collect any Clerk-mandated missing fields (first name, last name, username, phone number, captcha). Navigates
+ * into the app when signup completes or returns `null` if signup is already complete or the user is signed in.
  *
  * @returns The signup page React element, or `null` when signup is already complete or the user is signed in.
  */
@@ -245,6 +243,19 @@ export default function Page() {
     return null;
   }
 
+  /**
+   * Submits any Clerk-required missing profile fields and advances the signup flow.
+   *
+   * Attempts to build a payload from the locally entered missing fields (first name, last name, username, phone number),
+   * validates phone numbers require E.164 with a leading `+`, and sends the payload to Clerk via `signUp.update`.
+   *
+   * On success, finalizes the session and navigates into the app if the signup is complete; if the email remains unverified
+   * it switches to the verify step; otherwise it stays on the requirements step and surfaces the current requirement state.
+   *
+   * Handles Clerk SDK JSON parse error anomalies by attempting a `signUp.reload()` before failing, and sets `submitError`
+   * for user-visible messages on validation or server-side errors. Toggles local `submitting` state for the duration
+   * of the operation.
+   */
   async function handleSubmitRequirements() {
     setSubmitError(null);
     try {
