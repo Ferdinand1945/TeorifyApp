@@ -285,7 +285,7 @@ export default function Page() {
           if (msg.toLowerCase().includes("json parse error")) {
             console.warn("[sign-up] Clerk JSON parse error workaround triggered:", msg);
             try {
-              // eslint-disable-next-line `@typescript-eslint/no-explicit-any`
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               await (signUp as any).reload?.();
             } catch {
               console.warn("[sign-up] reload after JSON parse error also failed");
