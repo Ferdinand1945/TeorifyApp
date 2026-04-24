@@ -98,6 +98,9 @@ const Subscriptions = () => {
   useEffect(() => {
     if (!isLoaded) return
     if (!isSignedIn) {
+      setItems([])
+      setCategories([])
+      setExpandedSubscription(null)
       setLoading(false)
       setError('Please sign in to view subscriptions.')
       return
