@@ -1,4 +1,5 @@
 import { useAuth } from '@clerk/expo'
+import { useCallback } from 'react'
 
 import { getApiBaseUrl } from '@/lib/api'
 
@@ -15,19 +16,40 @@ import { getApiBaseUrl } from '@/lib/api'
 export function useAuthedFetch() {
   const { getToken } = useAuth()
 
-  return async (path: string, init: RequestInit = {}) => {
-    // `skipCache` helps avoid rare cases where a fresh token is needed.
-    const token = await getToken({ skipCache: true })
-    const res = await fetch(`${getApiBaseUrl()}${path}`, {
-      ...init,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(init.headers || {}),
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-    })
+  return useCallback(
+    async (path: string, init: RequestInit = {}) => {
+      // `skipCache` helps avoid rare cases where a fresh token is needed.
+      const token = await getToken({ skipCache: true })
+      const headers = new Headers(init.headers)
 
-    return res
-  }
+      if (token) {
+        headers.set('Authorization', `Bearer ${token}`)
+      }
+
+      const body = init.body as unknown
+      const isFormData =
+        typeof FormData !== 'undefined' && typeof body === 'object' && body != null && body instanceof FormData
+      const isBlob = typeof Blob !== 'undefined' && typeof body === 'object' && body != null && body instanceof Blob
+      const isArrayBuffer =
+        typeof ArrayBuffer !== 'undefined' && typeof body === 'object' && body != null && body instanceof ArrayBuffer
+
+      const isJsonishBody =
+        body == null ||
+        typeof body === 'string' ||
+        (typeof body === 'object' && !isFormData && !isBlob && !isArrayBuffer)
+
+      if (!headers.has('Content-Type') && isJsonishBody) {
+        headers.set('Content-Type', 'application/json')
+      }
+
+      const res = await fetch(`${getApiBaseUrl()}${path}`, {
+        ...init,
+        headers,
+      })
+
+      return res
+    },
+    [getToken],
+  )
 }
 

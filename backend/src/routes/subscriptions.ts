@@ -3,6 +3,7 @@ import { z } from 'zod'
 import mongoose from 'mongoose'
 
 import { requireUser } from '../middleware/requireUser.js'
+import { CategoryModel } from '../models/Category.js'
 import { SubscriptionModel } from '../models/Subscription.js'
 
 const router = Router()
@@ -38,6 +39,13 @@ router.get('/', async (req, res) => {
 
 router.post('/', async (req, res) => {
   const data = subscriptionCreateSchema.parse(req.body)
+  if (data.categoryId) {
+    if (!mongoose.isValidObjectId(data.categoryId)) {
+      return res.status(400).json({ error: 'INVALID_CATEGORY_ID' })
+    }
+    const exists = await CategoryModel.exists({ _id: data.categoryId, userId: req.userId })
+    if (!exists) return res.status(404).json({ error: 'CATEGORY_NOT_FOUND' })
+  }
   const doc = await SubscriptionModel.create({
     ...data,
     userId: req.userId,
@@ -54,6 +62,13 @@ router.patch('/:id', async (req, res) => {
 
   const patch = subscriptionUpdateSchema.parse(req.body)
   if (patch.currency) patch.currency = patch.currency.toUpperCase()
+  if (patch.categoryId) {
+    if (!mongoose.isValidObjectId(patch.categoryId)) {
+      return res.status(400).json({ error: 'INVALID_CATEGORY_ID' })
+    }
+    const exists = await CategoryModel.exists({ _id: patch.categoryId, userId: req.userId })
+    if (!exists) return res.status(404).json({ error: 'CATEGORY_NOT_FOUND' })
+  }
 
   const updated = await SubscriptionModel.findOneAndUpdate(
     { _id: id, userId: req.userId },
