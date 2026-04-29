@@ -235,7 +235,12 @@ const Subscriptions = () => {
         title: r.title ?? f.title,
         amount: typeof r.amount === 'number' ? String(r.amount) : f.amount,
         currency: r.currency ? r.currency : f.currency,
-        occurredAt: r.occurredAt ? new Date(r.occurredAt) : f.occurredAt,
+        occurredAt: r.occurredAt
+          ? (() => {
+              const [year, month, day] = r.occurredAt.split('-').map(Number)
+              return new Date(year, month - 1, day)
+            })()
+          : f.occurredAt,
       }))
       closeCamera()
 
