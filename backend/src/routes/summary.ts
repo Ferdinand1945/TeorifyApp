@@ -108,9 +108,14 @@ router.get('/month', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store')
 
   const monthStr = (req.query.month as string | undefined) || dayjs().format('YYYY-MM')
+  if (!/^\d{4}-\d{2}$/.test(monthStr)) {
+    return res.status(400).json({ error: 'INVALID_MONTH' })
+  }
   const start = dayjs(`${monthStr}-01`).startOf('month')
+  if (!start.isValid()) {
+    return res.status(400).json({ error: 'INVALID_MONTH' })
+  }
   const end = start.endOf('month')
-
   const userId = req.userId!
   const [spends, subs] = await Promise.all([
     loadSpendsInRange(userId, start.toDate(), end.toDate()),
