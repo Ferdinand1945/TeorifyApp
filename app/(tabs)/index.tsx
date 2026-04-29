@@ -6,18 +6,21 @@ import SubscriptionCard from "@/components/SubscriptionCard";
 import UpcomingSubscriptionCard from "@/components/UpcomingSubscriptionCard";
 import { HOME_BALANCE, HOME_USER, UPCOMING_SUBSCRIPTIONS } from "@/constants/data";
 import { icons } from "@/constants/icons";
-import images from "@/constants/images";
 import { invalidateApiCache, useAuthedFetch } from "@/hooks/useAuthedFetch";
 import { formatCurrency } from "@/lib/utils";
 import { useAuth, useUser } from "@clerk/expo";
-import dayjs from "dayjs";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import dayjs from "dayjs";
+import { CameraView, useCameraPermissions } from "expo-camera";
+import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   FlatList,
   Image,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -85,6 +88,7 @@ export default function Index() {
   const { user } = useUser()
   const { isLoaded, isSignedIn } = useAuth()
   const authedFetch = useAuthedFetch()
+  const cameraRef = useRef<CameraView | null>(null)
 
   const [subs, setSubs] = useState<ApiSubscription[]>([])
   const [categories, setCategories] = useState<ApiCategory[]>([])
@@ -100,15 +104,101 @@ export default function Index() {
   const [spendModalOpen, setSpendModalOpen] = useState(false)
   const [savingSpend, setSavingSpend] = useState(false)
   const [datePicker, setDatePicker] = useState<null | { field: "occurredAt" | "renewalAt"; value: Date }>(null)
+  const [cameraModalOpen, setCameraModalOpen] = useState(false)
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions()
+  const [scanningReceipt, setScanningReceipt] = useState(false)
+  const [pendingCameraOpen, setPendingCameraOpen] = useState(false)
+  const [cameraInlineOpen, setCameraInlineOpen] = useState(false)
   const [spendForm, setSpendForm] = useState({
     title: "",
     amount: "",
-    currency: "USD",
+    currency: "SEK",
     occurredAt: null as Date | null,
     renewalAt: null as Date | null,
     categoryId: null as string | null,
     notes: "",
   })
+
+  const closeCamera = () => {
+    setCameraModalOpen(false)
+    setScanningReceipt(false)
+    setPendingCameraOpen(false)
+    setCameraInlineOpen(false)
+  }
+
+  const closeSpend = () => {
+    setSpendModalOpen(false)
+    setDatePicker(null)
+    closeCamera()
+  }
+
+  const openCamera = async () => {
+    if (scanningReceipt) return
+    const granted = cameraPermission?.granted
+    if (!granted) {
+      const res = await requestCameraPermission()
+      if (!res.granted) {
+        Alert.alert("Camera permission needed", "Enable camera permission to scan a receipt.")
+        return
+      }
+    }
+    // Open camera inside the spend modal (avoids nested modal issues on iOS).
+    setCameraInlineOpen(true)
+  }
+
+  useEffect(() => {
+    if (!pendingCameraOpen) return
+    if (!cameraPermission?.granted) return
+    // Avoid modal presentation conflicts (pageSheet -> overFullScreen).
+    const t = setTimeout(() => {
+      setCameraModalOpen(true)
+      setPendingCameraOpen(false)
+    }, 0)
+    return () => clearTimeout(t)
+  }, [cameraPermission?.granted, pendingCameraOpen])
+
+  const scanReceiptFromUri = async (uri: string) => {
+    if (scanningReceipt) return
+    setScanningReceipt(true)
+    try {
+      const img = await manipulateAsync(uri, [{ resize: { width: 1280 } }], {
+        compress: 0.65,
+        format: SaveFormat.JPEG,
+        base64: true,
+      })
+      if (!img.base64) throw new Error("Failed to encode image")
+
+      const res = await authedFetch("/spends/scan-receipt", {
+        method: "POST",
+        body: JSON.stringify({ imageBase64: img.base64, mimeType: "image/jpeg" }),
+      })
+      if (!res.ok) {
+        const txt = await res.text()
+        throw new Error(txt || `Request failed (${res.status})`)
+      }
+      const json = (await res.json()) as {
+        result: { title?: string | null; amount?: number | null; currency?: string | null; occurredAt?: string | null }
+      }
+      const r = json.result
+
+      setSpendForm((f) => ({
+        ...f,
+        title: r.title ?? f.title,
+        amount: typeof r.amount === "number" ? String(r.amount) : f.amount,
+        currency: r.currency ? r.currency : f.currency,
+        occurredAt: r.occurredAt ? new Date(r.occurredAt) : f.occurredAt,
+      }))
+      closeCamera()
+
+      if (!r.amount && !r.title && !r.occurredAt) {
+        Alert.alert("Couldn't read receipt", "Try taking the photo closer with good lighting.")
+      }
+    } catch (e) {
+      Alert.alert("Receipt scan failed", e instanceof Error ? e.message : "Unknown error")
+    } finally {
+      setScanningReceipt(false)
+    }
+  }
 
   const loadRecentSpends = useCallback(
     async (from: string) => {
@@ -374,8 +464,12 @@ export default function Index() {
           <Image source={{ uri: user?.imageUrl }} className="home-avatar" />
           {user?.fullName ? <Text className="home-user-name">{user?.fullName}</Text> : <Text className="home-user-name">{user?.primaryEmailAddress?.emailAddress}</Text>}
         </View> 
-        <Pressable onPress={openSpendModal} hitSlop={10}>
-          <Image source={images.add} className="home-add-icon" />
+        <Pressable
+          onPress={openSpendModal}
+          hitSlop={10}
+          className="h-11 w-11 items-center justify-center rounded-full bg-primary"
+        >
+          <Text className="text-white text-2xl leading-none">+</Text>
         </Pressable>
         </View>
 
@@ -485,15 +579,23 @@ export default function Index() {
         visible={spendModalOpen}
         animationType="slide"
         presentationStyle="pageSheet"
-        onRequestClose={() => setSpendModalOpen(false)}
+        onRequestClose={closeSpend}
       >
+        <Pressable className="flex-1" onPress={() => Keyboard.dismiss()}>
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : undefined}
           className="flex-1 bg-[#F6F7FF] p-5"
         >
           <View className="flex-row items-center justify-between mb-4">
-            <Text className="text-xl font-semibold text-black">New spend</Text>
-            <Pressable onPress={() => (savingSpend ? null : setSpendModalOpen(false))} hitSlop={10} disabled={savingSpend}>
+            <View className="flex-row items-center gap-3">
+              <Text className="text-xl font-semibold text-black">New spend</Text>
+              <Pressable onPress={openCamera} hitSlop={10} disabled={savingSpend || scanningReceipt}>
+                <View className={savingSpend || scanningReceipt ? "opacity-50" : ""}>
+                  <Ionicons name="camera" size={22} color="#111827" />
+                </View>
+              </Pressable>
+            </View>
+            <Pressable onPress={() => (savingSpend ? null : closeSpend())} hitSlop={10} disabled={savingSpend}>
               <Text className="text-primary font-semibold">Close</Text>
             </Pressable>
           </View>
@@ -623,7 +725,7 @@ export default function Index() {
 
           <View className="mt-6 flex-row gap-3">
             <Pressable
-              onPress={() => setSpendModalOpen(false)}
+              onPress={closeSpend}
               className="flex-1 rounded-xl bg-gray-200 px-4 py-3"
               disabled={savingSpend}
             >
@@ -645,17 +747,129 @@ export default function Index() {
             <DateTimePicker
               value={datePicker.value}
               mode="date"
-              display={Platform.OS === "ios" ? "spinner" : "default"}
-              onChange={(_event, selected) => {
-                if (Platform.OS !== "ios") setDatePicker(null)
+              // "default" on iOS provides a dismissable picker; "spinner" has no dismiss on some setups.
+              display="default"
+              onValueChange={(_event, selected) => {
                 if (!selected) return
                 setSpendForm((f) =>
                   datePicker.field === "occurredAt" ? { ...f, occurredAt: selected } : { ...f, renewalAt: selected },
                 )
+                if (Platform.OS !== "ios") setDatePicker(null)
               }}
+              onDismiss={() => setDatePicker(null)}
             />
           )}
+
+          {cameraInlineOpen && (
+            <View className="absolute inset-0 bg-black">
+              {cameraPermission?.granted ? (
+                <CameraView ref={cameraRef} style={{ flex: 1 }} facing="back" />
+              ) : (
+                <View className="flex-1 items-center justify-center px-6">
+                  <Text className="text-white text-base text-center">Camera permission is required.</Text>
+                  <Pressable
+                    onPress={async () => {
+                      const res = await requestCameraPermission()
+                      if (res.granted) setCameraInlineOpen(true)
+                    }}
+                    className="mt-4 rounded-xl bg-white px-4 py-3"
+                  >
+                    <Text className="text-black font-semibold">Grant permission</Text>
+                  </Pressable>
+                </View>
+              )}
+
+              <View className="absolute bottom-0 left-0 right-0 p-5">
+                <View className="flex-row items-center justify-between">
+                  <Pressable
+                    onPress={() => setCameraInlineOpen(false)}
+                    disabled={scanningReceipt}
+                    className={scanningReceipt ? "rounded-xl bg-white/20 px-4 py-3" : "rounded-xl bg-white/30 px-4 py-3"}
+                  >
+                    <Text className="text-white font-semibold">Cancel</Text>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={async () => {
+                      if (scanningReceipt) return
+                      if (!cameraPermission?.granted) return
+                      const pic = await cameraRef.current?.takePictureAsync?.({ quality: 0.75, skipProcessing: true })
+                      if (!pic?.uri) return
+                      await scanReceiptFromUri(pic.uri)
+                      setCameraInlineOpen(false)
+                    }}
+                    disabled={scanningReceipt}
+                    className={scanningReceipt ? "rounded-full bg-white/40 px-6 py-4" : "rounded-full bg-white px-6 py-4"}
+                  >
+                    <View className="flex-row items-center justify-center gap-2">
+                      {scanningReceipt && <ActivityIndicator color="#111827" />}
+                      <Text className="text-black font-semibold">{scanningReceipt ? "Scanning…" : "Capture"}</Text>
+                    </View>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          )}
         </KeyboardAvoidingView>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={cameraModalOpen}
+        animationType="fade"
+        presentationStyle={Platform.OS === "ios" ? "overFullScreen" : "fullScreen"}
+        statusBarTranslucent
+        onRequestClose={() => (scanningReceipt ? null : closeCamera())}
+      >
+        <View className="flex-1 bg-black">
+          {cameraPermission?.granted ? (
+            <CameraView ref={cameraRef} style={{ flex: 1 }} facing="back" />
+          ) : (
+            <View className="flex-1 items-center justify-center px-6">
+              <Text className="text-white text-base text-center">
+                Camera permission is required.
+              </Text>
+              <Pressable
+                onPress={async () => {
+                  const res = await requestCameraPermission()
+                  if (res.granted) setPendingCameraOpen(true)
+                }}
+                className="mt-4 rounded-xl bg-white px-4 py-3"
+              >
+                <Text className="text-black font-semibold">Grant permission</Text>
+              </Pressable>
+            </View>
+          )}
+
+          <View className="absolute bottom-0 left-0 right-0 p-5">
+            <View className="flex-row items-center justify-between">
+              <Pressable
+                onPress={closeCamera}
+                disabled={scanningReceipt}
+                className={scanningReceipt ? "rounded-xl bg-white/20 px-4 py-3" : "rounded-xl bg-white/30 px-4 py-3"}
+              >
+                <Text className="text-white font-semibold">Cancel</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={async () => {
+                  if (scanningReceipt) return
+                  if (!cameraPermission?.granted) return
+                  const pic = await cameraRef.current?.takePictureAsync?.({ quality: 0.75, skipProcessing: true })
+                  if (!pic?.uri) return
+                  await scanReceiptFromUri(pic.uri)
+                }}
+                disabled={scanningReceipt}
+                className={scanningReceipt ? "rounded-full bg-white/40 px-6 py-4" : "rounded-full bg-white px-6 py-4"}
+              >
+                <View className="flex-row items-center justify-center gap-2">
+                  {scanningReceipt && <ActivityIndicator color="#111827" />}
+                  <Text className="text-black font-semibold">{scanningReceipt ? "Scanning…" : "Capture"}</Text>
+                </View>
+              </Pressable>
+            </View>
+          </View>
+        </View>
       </Modal>
       </View>
     </SafeScreen>

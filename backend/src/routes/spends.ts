@@ -5,6 +5,7 @@ import mongoose from 'mongoose'
 import { requireUser } from '../middleware/requireUser.js'
 import { CategoryModel } from '../models/Category.js'
 import { SpendModel } from '../models/Spend.js'
+import { scanReceiptFromBase64 } from '../receipt/scanReceipt.js'
 
 const router = Router()
 
@@ -30,6 +31,11 @@ const updateSchema = createSchema
   .partial()
   .refine((obj) => Object.keys(obj).length > 0, { message: 'At least one field must be provided' })
 
+const receiptScanSchema = z.object({
+  imageBase64: z.string().min(50),
+  mimeType: z.string().optional().nullable(),
+})
+
 router.use(requireUser)
 
 router.get('/', async (req, res) => {
@@ -48,6 +54,12 @@ router.get('/', async (req, res) => {
 
   const items = await SpendModel.find(filter).sort({ occurredAt: -1, createdAt: -1 }).lean()
   res.json({ items })
+})
+
+router.post('/scan-receipt', async (req, res) => {
+  const data = receiptScanSchema.parse(req.body)
+  const result = await scanReceiptFromBase64({ base64: data.imageBase64, mimeType: data.mimeType })
+  res.json({ result })
 })
 
 router.post('/', async (req, res) => {

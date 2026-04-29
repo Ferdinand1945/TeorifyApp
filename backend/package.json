@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=20.9.0"
+  },
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
@@ -18,6 +21,7 @@
     "helmet": "^8.1.0",
     "mongoose": "^8.18.0",
     "morgan": "^1.10.1",
+    "tesseract.js": "^7.0.0",
     "zod": "^4.1.5"
   },
   "devDependencies": {
@@ -29,4 +33,3 @@
     "typescript": "^5.9.2"
   }
 }
-
