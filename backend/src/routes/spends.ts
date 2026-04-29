@@ -58,7 +58,13 @@ router.get('/', async (req, res) => {
 
 router.post('/scan-receipt', async (req, res) => {
   const data = receiptScanSchema.parse(req.body)
-  const result = await scanReceiptFromBase64({ base64: data.imageBase64, mimeType: data.mimeType })
+  const full = await scanReceiptFromBase64({ base64: data.imageBase64, mimeType: data.mimeType })
+  const result = {
+    title: full.title ?? null,
+    amount: full.amount ?? null,
+    currency: full.currency ?? null,
+    occurredAt: full.occurredAt ?? null,
+  }
   res.json({ result })
 })
 

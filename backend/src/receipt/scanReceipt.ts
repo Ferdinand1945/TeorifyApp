@@ -12,15 +12,11 @@ export type ReceiptScanResult = {
 let workerPromise: Promise<any> | null = null
 
 async function getWorker() {
-  async function getWorker() {
-    if (!workerPromise) {
-      workerPromise = createWorker('eng').catch((err) => {
-        workerPromise = null
-        throw err
-      })
-    }
-    return await workerPromise
-  }
+  if (!workerPromise) {
+    workerPromise = createWorker('eng').catch((err) => {
+      workerPromise = null
+      throw err
+    })
   }
   return await workerPromise
 }
@@ -39,22 +35,20 @@ function detectCurrency(line: string): string | null {
 }
 
 function parseMoneyCandidate(raw: string): number | null {
-  function parseMoneyCandidate(raw: string): number | null {
-    const cleaned = raw.replace(/[^0-9.,]/g, '')
-    if (!cleaned) return null
+  const cleaned = raw.replace(/[^0-9.,]/g, '')
+  if (!cleaned) return null
 
-    const lastComma = cleaned.lastIndexOf(',')
-    const lastDot = cleaned.lastIndexOf('.')
-    const decimalIndex = Math.max(lastComma, lastDot)
+  const lastComma = cleaned.lastIndexOf(',')
+  const lastDot = cleaned.lastIndexOf('.')
+  const decimalIndex = Math.max(lastComma, lastDot)
 
-    const normalized =
-      decimalIndex >= 0 && cleaned.length - decimalIndex - 1 <= 2
-        ? `${cleaned.slice(0, decimalIndex).replace(/[.,]/g, '')}.${cleaned.slice(decimalIndex + 1)}`
-        : cleaned.replace(/[.,]/g, '')
+  const normalized =
+    decimalIndex >= 0 && cleaned.length - decimalIndex - 1 <= 2
+      ? `${cleaned.slice(0, decimalIndex).replace(/[.,]/g, '')}.${cleaned.slice(decimalIndex + 1)}`
+      : cleaned.replace(/[.,]/g, '')
 
-    const n = Number(normalized)
-    return Number.isFinite(n) ? n : null
-  }
+  const n = Number(normalized)
+  return Number.isFinite(n) ? n : null
 }
 
 function extractAmount(lines: string[]): { amount: number | null; currency: string | null } {
