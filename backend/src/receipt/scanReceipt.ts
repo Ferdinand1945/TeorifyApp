@@ -13,11 +13,10 @@ let workerPromise: Promise<any> | null = null
 
 async function getWorker() {
   if (!workerPromise) {
-    workerPromise = (async () => {
-      // tesseract.js has had API/type differences across versions;
-      // this form works with the currently installed package.
-      return await createWorker('eng')
-    })()
+    workerPromise = createWorker('eng').catch((err) => {
+      workerPromise = null
+      throw err
+    })
   }
   return await workerPromise
 }
@@ -36,13 +35,19 @@ function detectCurrency(line: string): string | null {
 }
 
 function parseMoneyCandidate(raw: string): number | null {
-  const cleaned = raw
-    .replace(/[^0-9.,]/g, '')
-    .replace(/,(?=\d{2}\b)/g, '.') // 12,50 -> 12.50
-    .replace(/,(?=\d{3}\b)/g, '') // 1,234 -> 1234
-  const m = cleaned.match(/\d+(?:\.\d{1,2})?/)
-  if (!m) return null
-  const n = Number(m[0])
+  const cleaned = raw.replace(/[^0-9.,]/g, '')
+  if (!cleaned) return null
+
+  const lastComma = cleaned.lastIndexOf(',')
+  const lastDot = cleaned.lastIndexOf('.')
+  const decimalIndex = Math.max(lastComma, lastDot)
+
+  const normalized =
+    decimalIndex >= 0 && cleaned.length - decimalIndex - 1 <= 2
+      ? `${cleaned.slice(0, decimalIndex).replace(/[.,]/g, '')}.${cleaned.slice(decimalIndex + 1)}`
+      : cleaned.replace(/[.,]/g, '')
+
+  const n = Number(normalized)
   return Number.isFinite(n) ? n : null
 }
 
