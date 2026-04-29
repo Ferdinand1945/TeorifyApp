@@ -12,12 +12,15 @@ export type ReceiptScanResult = {
 let workerPromise: Promise<any> | null = null
 
 async function getWorker() {
-  if (!workerPromise) {
-    workerPromise = (async () => {
-      // tesseract.js has had API/type differences across versions;
-      // this form works with the currently installed package.
-      return await createWorker('eng')
-    })()
+  async function getWorker() {
+    if (!workerPromise) {
+      workerPromise = createWorker('eng').catch((err) => {
+        workerPromise = null
+        throw err
+      })
+    }
+    return await workerPromise
+  }
   }
   return await workerPromise
 }
