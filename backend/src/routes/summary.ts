@@ -22,6 +22,14 @@ type TotalsRow = {
   subscriptionsMonthlyEquivalentCents?: number
 }
 
+/**
+ * Load expense spends for a user within an inclusive date range.
+ *
+ * @param userId - The user's identifier.
+ * @param start - Start of the date range (inclusive) for `occurredAt`.
+ * @param end - End of the date range (inclusive) for `occurredAt`.
+ * @returns An array of spend documents of type `expense` that match `userId` and whose `occurredAt` falls between `start` and `end`.
+ */
 async function loadSpendsInRange(userId: string, start: Date, end: Date) {
   return SpendModel.find({
     userId,
@@ -30,10 +38,25 @@ async function loadSpendsInRange(userId: string, start: Date, end: Date) {
   }).lean()
 }
 
+/**
+ * Load active subscriptions for a user.
+ *
+ * @param userId - ID of the user whose active subscriptions to load
+ * @returns Active subscription documents for the user as plain objects
+ */
 async function loadActiveSubscriptions(userId: string) {
   return SubscriptionModel.find({ userId, isActive: true }).lean()
 }
 
+/**
+ * Compute total cents per currency from an array of spend records.
+ *
+ * Each spend's `currency` is normalized to an uppercase code (defaults to `'USD'` when missing)
+ * and its `amountCents` (defaults to `0` when missing or falsy) is added to that currency's running sum.
+ *
+ * @param spends - Array of spend-like objects; each may include `currency` and `amountCents`
+ * @returns A Map mapping uppercase currency codes to the summed amount in cents
+ */
 function spendsByCurrency(spends: unknown[]): Map<string, number> {
   const map = new Map<string, number>()
   for (const s of spends) {
@@ -44,7 +67,12 @@ function spendsByCurrency(spends: unknown[]): Map<string, number> {
   return map
 }
 
-/** Monthly-equivalent cents per currency for active subscriptions. */
+/**
+ * Computes total monthly-equivalent cents per currency from active subscription records.
+ *
+ * @param subs - Array of subscription-like objects; each may include `currency`, `amountCents`, and `billingCycle` (`'weekly' | 'monthly' | 'yearly'`).
+ * @returns A Map whose keys are uppercase currency codes and whose values are the summed monthly-equivalent cents for that currency. Missing `currency` defaults to `'USD'` and missing `amountCents` defaults to `0`. Weekly amounts are converted by multiplying by `WEEKS_PER_MONTH`, yearly amounts are converted by dividing by `12`, and monthly amounts are used as-is.
+ */
 function subscriptionsMonthlyEquivalentByCurrency(subs: unknown[]): Map<string, number> {
   const map = new Map<string, number>()
   for (const s of subs) {
@@ -61,10 +89,25 @@ function subscriptionsMonthlyEquivalentByCurrency(subs: unknown[]): Map<string, 
   return map
 }
 
+/**
+ * Produce a sorted array of unique currency keys present in either of two maps.
+ *
+ * @param a - Map whose keys are currency identifiers (e.g., "USD")
+ * @param b - Map whose keys are currency identifiers (e.g., "EUR")
+ * @returns An array of unique currency keys from `a` and `b`, sorted lexicographically
+ */
 function mergeCurrencyKeys(a: Map<string, number>, b: Map<string, number>) {
   return Array.from(new Set([...a.keys(), ...b.keys()])).sort()
 }
 
+/**
+ * Builds per-currency totals by combining expense spends with subscription recurring equivalents for a requested period.
+ *
+ * @param spendsMap - Map from currency code (upper-case) to total expense cents for that currency
+ * @param monthlySubsMap - Map from currency code (upper-case) to subscriptions' monthly-equivalent cents for that currency
+ * @param recurringMode - Target period for recurring amounts: `'week'`, `'month'`, or `'year'`
+ * @returns An array of TotalsRow where each element includes `currency`, `spendsTotalCents`, `recurringCents` (converted to the requested period), `totalCents`, and — when `recurringMode` is `'month'` — `subscriptionsMonthlyEquivalentCents` representing the monthly-equivalent subscription cents
+ */
 function buildTotals(
   spendsMap: Map<string, number>,
   monthlySubsMap: Map<string, number>,
@@ -92,6 +135,12 @@ function buildTotals(
   })
 }
 
+/**
+ * Compute the Monday–Sunday week bounds that contain a given date.
+ *
+ * @param d - A dayjs date within the desired week
+ * @returns An object with `start` set to the week's Monday at start-of-day and `end` set to the week's Sunday at end-of-day
+ */
 function weekBoundsContainingDate(d: dayjs.Dayjs) {
   const day = d.day()
   const diffToMonday = day === 0 ? -6 : 1 - day

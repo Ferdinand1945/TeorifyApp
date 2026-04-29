@@ -31,6 +31,12 @@ type SummaryResponse = {
   totals: TotalsRow[]
 }
 
+/**
+ * Get the recurring amount (in cents) for a totals row, using fallback values when necessary.
+ *
+ * @param t - The totals row for a single currency
+ * @returns The recurring amount in cents from `t.recurringCents`, or `t.subscriptionsMonthlyEquivalentCents` if that is absent, or `0` if neither is present
+ */
 function recurringCents(t: TotalsRow): number {
   return t.recurringCents ?? t.subscriptionsMonthlyEquivalentCents ?? 0
 }
