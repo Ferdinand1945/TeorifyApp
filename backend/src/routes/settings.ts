@@ -37,6 +37,12 @@ router.put('/monthly-income', async (req, res) => {
     const n = Number(monthlyIncomeCents)
     if (!Number.isFinite(n) || n < 0) return res.status(400).json({ error: 'INVALID_MONTHLY_INCOME' })
   }
+
+  const validatedIncomeCents =
+    monthlyIncomeCents === null || monthlyIncomeCents === undefined
+      ? null
+      : Number(monthlyIncomeCents)
+
   if (currency !== null && currency !== undefined) {
     if (typeof currency !== 'string' || currency.trim().length === 0 || currency.trim().length > 12) {
       return res.status(400).json({ error: 'INVALID_CURRENCY' })
@@ -50,7 +56,7 @@ router.put('/monthly-income', async (req, res) => {
     { userId },
     {
       $set: {
-        monthlyIncomeCents: monthlyIncomeCents === undefined ? null : monthlyIncomeCents,
+        monthlyIncomeCents: validatedIncomeCents,
         monthlyIncomeCurrency: normalizedCurrency,
       },
       $setOnInsert: { userId },
