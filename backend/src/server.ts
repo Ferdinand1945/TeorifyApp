@@ -10,6 +10,7 @@ import { requireUser } from './middleware/requireUser.js'
 import { errorHandler } from './middleware/errorHandler.js'
 import categoriesRouter from './routes/categories.js'
 import spendsRouter from './routes/spends.js'
+import settingsRouter from './routes/settings.js'
 import summaryRouter from './routes/summary.js'
 import subscriptionsRouter from './routes/subscriptions.js'
 
@@ -56,6 +57,7 @@ async function main() {
   app.use('/subscriptions', subscriptionsRouter)
   app.use('/categories', categoriesRouter)
   app.use('/spends', spendsRouter)
+  app.use('/settings', settingsRouter)
   app.use('/summary', summaryRouter)
 
   app.use(errorHandler)

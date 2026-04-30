@@ -6,6 +6,12 @@ import React, { useEffect } from "react";
 import "../global.css";
 const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY!
 
+// Keep the splash screen visible while we load fonts.
+// Required before calling `hideAsync()` to avoid iOS "No native splash screen registered" errors.
+SplashScreen.preventAutoHideAsync().catch(() => {
+  // ignore: it can throw if called too late during fast refresh
+});
+
 /**
  * Root layout component that loads custom Plus Jakarta Sans fonts, hides the splash screen once fonts are ready, and provides Clerk authentication context for the app's navigation stack.
  *
@@ -22,9 +28,10 @@ export default function RootLayout() {
   });
 
   useEffect(() => {
-    if (fontsLoaded) {
-     SplashScreen.hideAsync();
-    }
+    if (!fontsLoaded) return
+    SplashScreen.hideAsync().catch(() => {
+      // ignore
+    })
   }, [fontsLoaded]);
 
   if (!fontsLoaded) {

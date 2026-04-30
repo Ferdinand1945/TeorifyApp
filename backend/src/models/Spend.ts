@@ -11,6 +11,8 @@ export interface SpendDoc {
   occurredAt: Date
   renewalAt?: Date | null
   categoryId?: string | null
+  /** Optional canonical service identifier used for UI icons (e.g. "spotify", "netflix"). */
+  serviceKey?: string | null
   notes?: string | null
   createdAt: Date
   updatedAt: Date
@@ -26,6 +28,7 @@ const spendSchema = new Schema<SpendDoc>(
     occurredAt: { type: Date, required: true, default: Date.now, index: true },
     renewalAt: { type: Date, required: false, default: null },
     categoryId: { type: String, required: false, default: null },
+    serviceKey: { type: String, required: false, default: null, trim: true, lowercase: true },
     notes: { type: String, required: false, default: null, trim: true },
   },
   { timestamps: true },

@@ -1,8 +1,8 @@
 import dayjs from "dayjs";
 
-export const formatCurrency = (value: number, currency = "USD"): string => {
+export const formatCurrency = (value: number, currency = "SEK"): string => {
   try {
-    return new Intl.NumberFormat("en-US", {
+    return new Intl.NumberFormat("sv-SE", {
       style: "currency",
       currency,
       minimumFractionDigits: 2,

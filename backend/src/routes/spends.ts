@@ -24,6 +24,7 @@ const createSchema = z.object({
   occurredAt: optionalDate(),
   renewalAt: optionalDate().nullable().optional(),
   categoryId: z.string().min(1).optional().nullable(),
+  serviceKey: z.string().min(1).max(40).optional().nullable(),
   notes: z.string().max(1000).optional().nullable(),
 })
 
@@ -84,6 +85,7 @@ router.post('/', async (req, res) => {
     userId: req.userId,
     currency: data.currency.toUpperCase(),
     title: data.title.trim(),
+    serviceKey: data.serviceKey?.trim().toLowerCase() || null,
     notes: data.notes?.trim() || null,
     occurredAt: data.occurredAt ?? new Date(),
     renewalAt: data.renewalAt ?? null,
@@ -101,6 +103,7 @@ router.patch('/:id', async (req, res) => {
   const patch = updateSchema.parse(req.body)
   if (patch.currency) patch.currency = patch.currency.toUpperCase()
   if (patch.title) patch.title = patch.title.trim()
+  if (patch.serviceKey) patch.serviceKey = patch.serviceKey.trim().toLowerCase()
   if (patch.notes) patch.notes = patch.notes.trim()
 
   if (patch.categoryId) {
