@@ -3,6 +3,7 @@ import { tokenCache } from '@clerk/expo/token-cache';
 import { useFonts } from "expo-font";
 import { SplashScreen, Stack } from "expo-router";
 import React, { useEffect } from "react";
+import * as Notifications from "expo-notifications";
 import "../global.css";
 const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY!
 
@@ -10,6 +11,16 @@ const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY!
 // Required before calling `hideAsync()` to avoid iOS "No native splash screen registered" errors.
 SplashScreen.preventAutoHideAsync().catch(() => {
   // ignore: it can throw if called too late during fast refresh
+});
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: false,
+    shouldSetBadge: false,
+  }),
 });
 
 /**

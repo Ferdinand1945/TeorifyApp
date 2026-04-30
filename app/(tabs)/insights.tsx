@@ -1,3 +1,4 @@
+import DonutChart from '@/components/DonutChart'
 import { SafeScreen } from '@/components/SafeScreen'
 import { useAuthedFetch } from '@/hooks/useAuthedFetch'
 import { formatCurrency } from '@/lib/utils'
@@ -35,20 +36,26 @@ type SummaryResponse = {
   totals: TotalsRow[]
 }
 
-function recurringCents(t: TotalsRow): number {
-  return t.recurringCents ?? t.subscriptionsMonthlyEquivalentCents ?? 0
+type ApiSpend = {
+  _id: string
+  title: string
+  type: 'expense' | 'income'
+  amountCents: number
+  currency: string
+  occurredAt: string
+  categoryId?: string | null
+}
+
+type ApiCategory = {
+  _id: string
+  name: string
+  kind: 'subscription' | 'expense' | 'income'
 }
 
 const periodLabel: Record<Period, string> = {
   week: 'Week',
   month: 'Month',
   year: 'Year',
-}
-
-const recurringHint: Record<Period, string> = {
-  week: 'Subscriptions (weekly share of monthly cost)',
-  month: 'Subscriptions (monthly equivalent)',
-  year: 'Subscriptions (annualized from monthly)',
 }
 
 const MONTHLY_INCOME_STORE_KEY = 'insights:monthlyIncome'
@@ -68,6 +75,13 @@ const Insights = () => {
   const [monthlyIncomeCurrency, setMonthlyIncomeCurrency] = useState<string | null>(null)
   const [editingIncome, setEditingIncome] = useState(false)
   const [incomeDraft, setIncomeDraft] = useState('')
+  const [spendTotals, setSpendTotals] = useState<{
+    currency: string
+    totalSpendsCents: number
+    subscriptionsCents: number
+    foodCents: number
+    othersCents: number
+  } | null>(null)
   const queryKey = useMemo(() => {
     if (period === 'week') return `/summary/week?date=${anchor.format('YYYY-MM-DD')}`
     if (period === 'month') return `/summary/month?month=${anchor.format('YYYY-MM')}`
@@ -134,13 +148,49 @@ const Insights = () => {
       }
       const json = (await res.json()) as SummaryResponse
       setData(json)
+
+      // For the chart design we want a "spending breakdown" built from spends + categories (month view).
+      if (period === 'month') {
+        const start = anchor.startOf('month').format('YYYY-MM-DD')
+        const end = anchor.endOf('month').format('YYYY-MM-DD')
+        const [spendsRes, catsRes] = await Promise.all([
+          authedFetch(`/spends?from=${start}&to=${end}`),
+          authedFetch('/categories'),
+        ])
+        if (spendsRes.ok && catsRes.ok) {
+          const spendsJson = (await spendsRes.json()) as { items: ApiSpend[] }
+          const catsJson = (await catsRes.json()) as { items: ApiCategory[] }
+          const catsById = new Map((catsJson.items || []).map((c) => [c._id, c]))
+
+          const expenses = (spendsJson.items || []).filter((s) => s.type === 'expense')
+          const currency = (expenses[0]?.currency || json.totals[0]?.currency || 'SEK').toUpperCase()
+
+          let total = 0
+          let subs = 0
+          let food = 0
+          let others = 0
+          for (const s of expenses) {
+            total += s.amountCents || 0
+            const cat = s.categoryId ? catsById.get(s.categoryId) : undefined
+            if (cat?.kind === 'subscription') subs += s.amountCents || 0
+            else if ((cat?.name || '').toLowerCase().includes('food')) food += s.amountCents || 0
+            else others += s.amountCents || 0
+          }
+          setSpendTotals({ currency, totalSpendsCents: total, subscriptionsCents: subs, foodCents: food, othersCents: others })
+        } else {
+          setSpendTotals(null)
+        }
+      } else {
+        setSpendTotals(null)
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load insights')
       setData(null)
+      setSpendTotals(null)
     } finally {
       setLoading(false)
     }
-  }, [authedFetch, queryKey])
+  }, [anchor, authedFetch, period, queryKey])
 
   useEffect(() => {
     if (!isLoaded) return
@@ -168,18 +218,6 @@ const Insights = () => {
     return ''
   }, [data])
 
-  const goPrev = () => {
-    if (period === 'week') setAnchor((a) => a.subtract(7, 'day'))
-    else if (period === 'month') setAnchor((a) => a.subtract(1, 'month'))
-    else setAnchor((a) => a.subtract(1, 'year'))
-  }
-
-  const goNext = () => {
-    if (period === 'week') setAnchor((a) => a.add(7, 'day'))
-    else if (period === 'month') setAnchor((a) => a.add(1, 'month'))
-    else setAnchor((a) => a.add(1, 'year'))
-  }
-
   const setPeriodAndResetAnchor = (p: Period) => {
     setPeriod(p)
     setAnchor(dayjs())
@@ -188,18 +226,17 @@ const Insights = () => {
   const grandTotalByCurrency = useMemo(() => data?.totals ?? [], [data])
   const firstCurrency = grandTotalByCurrency[0]?.currency ?? 'SEK'
   const incomeCurrency = (monthlyIncomeCurrency ?? firstCurrency).toUpperCase()
-  const monthTotal = useMemo(() => {
+  const monthSpends = useMemo(() => {
     if (period !== 'month') return null
-    if (grandTotalByCurrency.length === 0) return null
-    // If multiple currencies exist, we show the first for now.
-    return grandTotalByCurrency[0].totalCents / 100
-  }, [grandTotalByCurrency, period])
+    if (!spendTotals) return null
+    return spendTotals.totalSpendsCents / 100
+  }, [period, spendTotals])
   const remainingAfterSpend = useMemo(() => {
     if (period !== 'month') return null
     if (monthlyIncome == null) return null
-    if (monthTotal == null) return null
-    return monthlyIncome - monthTotal
-  }, [monthTotal, monthlyIncome, period])
+    if (monthSpends == null) return null
+    return monthlyIncome - monthSpends
+  }, [monthSpends, monthlyIncome, period])
 
   const startEditingIncome = () => {
     setIncomeDraft(monthlyIncome == null ? '' : String(monthlyIncome))
@@ -238,85 +275,34 @@ const Insights = () => {
   }
 
   return (
-    <SafeScreen className="flex-1 bg-background p-5">
-      <Text className="text-xl font-semibold text-black mb-1">Insights</Text>
-      <Text className="text-sm text-gray-600 mb-5">
-        Spending and recurring subscriptions for the period you select.
+    <SafeScreen className="flex-1 bg-[#EEEAE2] px-5 pt-6">
+      <Text className="text-3xl font-sans-extrabold text-black mb-1">Insights</Text>
+      <Text className="text-sm font-sans-semibold text-gray-600 mb-5">
+        Your financial overview for {headerLabel || dayjs().format('MMMM YYYY')}
       </Text>
-      <View className="flex-row justify-between mb-4 rounded-2xl bg-white px-2 py-2">
-        <View className="flex-1 gap-1 pr-3">
-          <Text className="text-sm text-black">Add your monthly income</Text>
 
-          {editingIncome ? (
-            <TextInput
-              value={incomeDraft}
-              onChangeText={setIncomeDraft}
-              placeholder="Enter your monthly income"
-              keyboardType={Platform.OS === 'ios' ? 'decimal-pad' : 'numeric'}
-              className="text-sm text-black border border-gray-300 rounded-md px-3 py-2"
-              autoFocus
-              onSubmitEditing={saveIncome}
-              returnKeyType="done"
-            />
-          ) : (
-            <View className="gap-0.5">
-              <Text className="text-2xl font-semibold text-black">
-                {monthlyIncome == null ? '—' : formatCurrency(monthlyIncome, incomeCurrency)}
-              </Text>
-              {period === 'month' && remainingAfterSpend != null && (
-                <Text className="text-lg text-gray-800">
-                  Remaining after spends: {formatCurrency(remainingAfterSpend, incomeCurrency)}
-                </Text>
-              )}
-              {period !== 'month' && (
-                <Text className="text-xs text-gray-600">Switch to Month to see remaining after spends.</Text>
-              )}
-            </View>
-          )}
-        </View>
-
-        <Pressable
-          onPress={editingIncome ? saveIncome : startEditingIncome}
-          className="justify-end"
-          hitSlop={10}
-        >
-          <Ionicons name={editingIncome ? 'checkmark-circle' : 'add-circle'} size={40} color="black" />
-        </Pressable>
-      </View>
-      <View className="flex-row rounded-2xl bg-white p-1 mb-4">
+      <View className="flex-row rounded-2xl bg-[#E6E0D7] p-1 mb-4">
         {(['week', 'month', 'year'] as const).map((p) => (
           <Pressable
             key={p}
             onPress={() => setPeriodAndResetAnchor(p)}
             className={
               period === p
-                ? 'flex-1 rounded-xl bg-primary py-2.5'
+                ? 'flex-1 rounded-xl bg-[#EDE8E0] py-2.5'
                 : 'flex-1 rounded-xl py-2.5'
             }
           >
             <Text
               className={
                 period === p
-                  ? 'text-center text-sm font-semibold text-white'
-                  : 'text-center text-sm font-semibold text-gray-700'
+                  ? 'text-center text-sm font-sans-extrabold text-[#2F9C8A]'
+                  : 'text-center text-sm font-sans-extrabold text-gray-800'
               }
             >
               {periodLabel[p]}
             </Text>
           </Pressable>
         ))}
-      </View>
-
-      <View className="flex-row items-center justify-between mb-4 rounded-2xl bg-white px-2 py-2">
-        <Pressable onPress={goPrev} hitSlop={12} className="h-10 w-10 items-center justify-center rounded-full bg-gray-100">
-          <Text className="text-lg text-black">‹</Text>
-        </Pressable>
-        <Text className="flex-1 px-2 text-center text-base font-semibold text-black" numberOfLines={2}>
-          {headerLabel || '—'}
-        </Text>
-        <Pressable onPress={goNext} hitSlop={12} className="h-10 w-10 items-center justify-center rounded-full bg-gray-100">
-          <Text className="text-lg text-black">›</Text>
-        </Pressable>
       </View>
 
       {loading ? (
@@ -327,45 +313,115 @@ const Insights = () => {
       ) : error ? (
         <Text className="text-center text-sm text-gray-600">{error}</Text>
       ) : (
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        >
-          {grandTotalByCurrency.length === 0 ? (
-            <Text className="text-center text-sm text-gray-500 py-8">No totals for this period.</Text>
+        <ScrollView showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
+          {period === 'month' && remainingAfterSpend != null ? (
+            <View className="rounded-3xl bg-[#0F2D2A] px-5 py-6" style={{ shadowColor: "#000", shadowOpacity: 0.12, shadowRadius: 14, shadowOffset: { width: 0, height: 8 } }}>
+              <View className="flex-row items-center justify-between">
+                <Text className="text-sm font-sans-semibold text-white/80">Remaining after spends</Text>
+                <View className="h-11 w-11 items-center justify-center rounded-full bg-[#2F9C8A]">
+                  <Ionicons name="arrow-forward" size={18} color="#fff" />
+                </View>
+              </View>
+              <Text className="mt-3 text-4xl font-sans-extrabold text-white">
+                {formatCurrency(remainingAfterSpend, incomeCurrency)}
+              </Text>
+            </View>
           ) : (
-            <View className="gap-4 pb-8">
-              {grandTotalByCurrency.map((row) => {
-                const spend = row.spendsTotalCents / 100
-                const recurring = recurringCents(row) / 100
-                const total = row.totalCents / 100
-                return (
-                  <View key={row.currency} className="rounded-2xl border border-border bg-card p-4">
-                    <Text className="text-sm font-semibold text-gray-500 mb-3">{row.currency}</Text>
-                    <View className="gap-2">
-                      <View className="flex-row items-center justify-between">
-                        <Text className="text-base text-black">Spends</Text>
-                        <Text className="text-base font-semibold text-black">{formatCurrency(spend, row.currency)}</Text>
-                      </View>
-                      <View className="flex-row items-center justify-between">
-                        <Text className="text-base text-black flex-1 pr-2" numberOfLines={2}>
-                          {recurringHint[period]}
-                        </Text>
-                        <Text className="text-base font-semibold text-black">
-                          {formatCurrency(recurring, row.currency)}
-                        </Text>
-                      </View>
-                      <View className="my-2 h-px bg-border" />
-                      <View className="flex-row items-center justify-between">
-                        <Text className="text-lg font-bold text-black">Total</Text>
-                        <Text className="text-lg font-bold text-black">{formatCurrency(total, row.currency)}</Text>
-                      </View>
-                    </View>
-                  </View>
-                )
-              })}
+            <View className="rounded-3xl bg-[#0F2D2A] px-5 py-6">
+              <Text className="text-sm font-sans-semibold text-white/80">Remaining after spends</Text>
+              <Text className="mt-3 text-4xl font-sans-extrabold text-white">—</Text>
+              <Text className="mt-2 text-xs font-sans-semibold text-white/70">Switch to Month to enable this view.</Text>
             </View>
           )}
+
+          <View className="mt-4 rounded-3xl bg-[#E6E0D7] px-5 py-5">
+            <View className="flex-row items-center justify-between">
+              <View>
+                <Text className="text-sm font-sans-semibold text-black/70">Monthly Income</Text>
+                {editingIncome ? (
+                  <TextInput
+                    value={incomeDraft}
+                    onChangeText={setIncomeDraft}
+                    placeholder="Enter your monthly income"
+                    keyboardType={Platform.OS === 'ios' ? 'decimal-pad' : 'numeric'}
+                    className="mt-2 rounded-xl bg-white px-4 py-3 text-base font-sans-extrabold text-black"
+                    autoFocus
+                    onSubmitEditing={saveIncome}
+                    returnKeyType="done"
+                  />
+                ) : (
+                  <Text className="mt-2 text-3xl font-sans-extrabold text-black">
+                    {monthlyIncome == null ? '—' : formatCurrency(monthlyIncome, incomeCurrency)}
+                  </Text>
+                )}
+              </View>
+              <Pressable onPress={editingIncome ? saveIncome : startEditingIncome} hitSlop={10} className="h-12 w-12 items-center justify-center rounded-2xl bg-[#EEEAE2]">
+                <Ionicons name={editingIncome ? 'checkmark' : 'pencil'} size={18} color="#111827" />
+              </Pressable>
+            </View>
+          </View>
+
+          <View className="mt-4 rounded-3xl bg-[#E6E0D7] px-5 py-5">
+            <Text className="text-lg font-sans-extrabold text-black">Spending Breakdown</Text>
+
+            <View className="mt-5 flex-row items-center gap-5">
+              <DonutChart
+                size={170}
+                thickness={26}
+                slices={[
+                  { value: spendTotals?.subscriptionsCents ?? 0, color: "#84AE93" },
+                  { value: spendTotals?.foodCents ?? 0, color: "#A7C7B5" },
+                  { value: spendTotals?.othersCents ?? 0, color: "#0F2D2A" },
+                ]}
+                trackColor="#D7D0C7"
+              />
+
+              <View className="flex-1 gap-4">
+                {(() => {
+                  const total = spendTotals?.totalSpendsCents ?? 0
+                  const pct = (v: number) => (total > 0 ? Math.round((v / total) * 100) : 0)
+                  const subsPct = pct(spendTotals?.subscriptionsCents ?? 0)
+                  const foodPct = pct(spendTotals?.foodCents ?? 0)
+                  const otherPct = Math.max(0, 100 - subsPct - foodPct)
+                  return (
+                    <>
+                      <View className="flex-row items-center justify-between">
+                        <View className="flex-row items-center gap-2">
+                          <View className="h-3 w-3 rounded-full" style={{ backgroundColor: "#84AE93" }} />
+                          <Text className="text-sm font-sans-semibold text-black/80">Subscriptions</Text>
+                        </View>
+                        <Text className="text-lg font-sans-extrabold text-black">{subsPct}%</Text>
+                      </View>
+                      <View className="flex-row items-center justify-between">
+                        <View className="flex-row items-center gap-2">
+                          <View className="h-3 w-3 rounded-full" style={{ backgroundColor: "#A7C7B5" }} />
+                          <Text className="text-sm font-sans-semibold text-black/80">Food</Text>
+                        </View>
+                        <Text className="text-lg font-sans-extrabold text-black">{foodPct}%</Text>
+                      </View>
+                      <View className="flex-row items-center justify-between">
+                        <View className="flex-row items-center gap-2">
+                          <View className="h-3 w-3 rounded-full" style={{ backgroundColor: "#0F2D2A" }} />
+                          <Text className="text-sm font-sans-semibold text-black/80">Others</Text>
+                        </View>
+                        <Text className="text-lg font-sans-extrabold text-black">{otherPct}%</Text>
+                      </View>
+                    </>
+                  )
+                })()}
+              </View>
+            </View>
+
+            <View className="mt-6 h-px bg-[#D7D0C7]" />
+            <View className="mt-4 flex-row items-center justify-between">
+              <Text className="text-base font-sans-extrabold text-black/60">Total Spends</Text>
+              <Text className="text-base font-sans-extrabold text-black">
+                {formatCurrency((spendTotals?.totalSpendsCents ?? 0) / 100, incomeCurrency)}
+              </Text>
+            </View>
+          </View>
+
+          <View className="h-10" />
         </ScrollView>
       )}
     </SafeScreen>

@@ -1,24 +1,22 @@
 import "@/global.css";
 
-import ListHeading from "@/components/ListHeading";
 import NewSpendModal from "@/components/NewSpendModal";
+import ExpandableSpendCard from "@/components/ExpandableSpendCard";
 import { SafeScreen } from "@/components/SafeScreen";
-import SubscriptionCard from "@/components/SubscriptionCard";
-import UpcomingSubscriptionCard from "@/components/UpcomingSubscriptionCard";
-import { HOME_USER, UPCOMING_SUBSCRIPTIONS } from "@/constants/data";
-import { icons } from "@/constants/icons";
+import { HOME_USER } from "@/constants/data";
+import { iconSourceForServiceKey, labelForServiceKey } from "@/lib/spendDisplay";
+import { syncSubscriptionReminders, cancelReminderForSpendId } from "@/lib/subscriptionReminders";
 import { invalidateApiCache, useAuthedFetch } from "@/hooks/useAuthedFetch";
 import { formatCurrency } from "@/lib/utils";
 import { useAuth, useUser } from "@clerk/expo";
+import { Ionicons } from "@expo/vector-icons";
 import dayjs from "dayjs";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
-  FlatList,
   Image,
   Pressable,
-  RefreshControl,
+  ScrollView,
   Text,
   View,
 } from "react-native";
@@ -49,6 +47,7 @@ type ApiSpend = {
   occurredAt: string;
   renewalAt?: string | null;
   categoryId?: string | null;
+  serviceKey?: string | null;
   notes?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -61,7 +60,6 @@ type ApiSpend = {
  * @returns The root JSX element for the home screen
  */
 export default function Index() {
-  const [expandedSubscription, setExpandedSubscription] = useState<string | null>(null);
   const { user } = useUser()
   const { isLoaded, isSignedIn } = useAuth()
   const authedFetch = useAuthedFetch()
@@ -69,41 +67,19 @@ export default function Index() {
   const [categories, setCategories] = useState<ApiCategory[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [refreshing, setRefreshing] = useState(false)
 
   const [monthTotals, setMonthTotals] = useState<SummaryTotalsRow[]>([])
   const [recentSpends, setRecentSpends] = useState<ApiSpend[]>([])
-  const [allSpends, setAllSpends] = useState<ApiSpend[]>([])
-  const [deletingSpendId, setDeletingSpendId] = useState<string | null>(null)
-  const [deletingSubId, setDeletingSubId] = useState<string | null>(null)
+  const [expandedSpendId, setExpandedSpendId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   const [spendModalOpen, setSpendModalOpen] = useState(false)
-  const loadRecentSpends = useCallback(
-    async (from: string) => {
-      const spendsRes = await authedFetch(`/spends?from=${from}`)
-      if (!spendsRes.ok) return
-      const spendsJson = (await spendsRes.json()) as { items: ApiSpend[] }
-      setRecentSpends((spendsJson.items || []).slice(0, 6))
-    },
-    [authedFetch],
-  )
-
-  const loadMonthSummary = useCallback(
-    async (month: string) => {
-      const summaryRes = await authedFetch(`/summary/month?month=${month}`)
-      if (!summaryRes.ok) return
-      const summaryJson = (await summaryRes.json()) as { month: string; totals: SummaryTotalsRow[] }
-      setMonthTotals(summaryJson.totals || [])
-    },
-    [authedFetch],
-  )
-
   const load = useCallback(async () => {
     setError(null)
     try {
       const month = dayjs().format("YYYY-MM")
       const from = dayjs().startOf("month").format("YYYY-MM-DD")
-      const [catsRes, summaryRes, recentRes, allRes] = await Promise.all([
+      const [catsRes, summaryRes, recentRes, allSpendsRes] = await Promise.all([
         authedFetch("/categories"),
         authedFetch(`/summary/month?month=${month}`),
         authedFetch(`/spends?from=${from}`),
@@ -131,9 +107,10 @@ export default function Index() {
         const spendsJson = (await recentRes.json()) as { items: ApiSpend[] }
         setRecentSpends((spendsJson.items || []).slice(0, 6))
       }
-      if (allRes.ok) {
-        const allJson = (await allRes.json()) as { items: ApiSpend[] }
-        setAllSpends(allJson.items || [])
+
+      if (allSpendsRes.ok) {
+        const allJson = (await allSpendsRes.json()) as { items: ApiSpend[] }
+        await syncSubscriptionReminders(allJson.items || [])
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load subscriptions")
@@ -142,147 +119,56 @@ export default function Index() {
     }
   }, [authedFetch])
 
-  const deleteSpend = async (spend: ApiSpend) => {
-    if (deletingSpendId) return
-    Alert.alert("Delete spend?", spend.title, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          setDeletingSpendId(spend._id)
-          const watchdog = setTimeout(() => {
-            setDeletingSpendId((cur) => (cur === spend._id ? null : cur))
-          }, 20_000)
-          try {
-            // eslint-disable-next-line no-console
-            console.log("[spends] deleting", spend._id)
-            const res = await authedFetch(`/spends/${spend._id}`, { method: "DELETE" })
-            // eslint-disable-next-line no-console
-            console.log("[spends] delete response", res.status)
-            if (!res.ok && res.status !== 204) {
-              const txt = await res.text()
-              throw new Error(txt || `Request failed (${res.status})`)
+  const deleteOne = useCallback(
+    async (spend: ApiSpend) => {
+      Alert.alert("Delete spend?", spend.title, [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            let watchdogId: ReturnType<typeof setTimeout> | null = null
+            try {
+              setDeletingId(spend._id)
+              watchdogId = setTimeout(() => {
+                setDeletingId((cur) => (cur === spend._id ? null : cur))
+              }, 20_000)
+              const res = await authedFetch(`/spends/${spend._id}`, { method: "DELETE" })
+              if (!res.ok && res.status !== 204) {
+                const txt = await res.text()
+                throw new Error(txt || `Request failed (${res.status})`)
+              }
+              invalidateApiCache(["/spends", "/summary"])
+              await cancelReminderForSpendId(spend._id)
+              setExpandedSpendId((cur) => (cur === spend._id ? null : cur))
+              await load()
+              Alert.alert("Deleted", `${spend.title} was deleted.`)
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : "Unknown error"
+              Alert.alert("Delete failed", msg.includes("aborted") ? "Request timed out. Check EXPO_PUBLIC_API_URL." : msg)
+            } finally {
+              if (watchdogId) clearTimeout(watchdogId)
+              setDeletingId(null)
             }
-            setRecentSpends((cur) => cur.filter((s) => s._id !== spend._id))
-            invalidateApiCache(['/spends', '/summary'])
-
-            // Fast refresh: only the parts that change.
-            const month = dayjs().format("YYYY-MM")
-            const from = dayjs().startOf("month").format("YYYY-MM-DD")
-            await Promise.all([loadMonthSummary(month), loadRecentSpends(from)])
-          } catch (e) {
-            const msg = e instanceof Error ? e.message : "Unknown error"
-            Alert.alert("Delete failed", msg.includes("aborted") ? "Request timed out. Check EXPO_PUBLIC_API_URL." : msg)
-          } finally {
-            clearTimeout(watchdog)
-            setDeletingSpendId(null)
-          }
+          },
         },
-      },
-    ])
-  }
-
-  const deleteSubscription = async (subId: string, subName: string) => {
-    if (deletingSubId) return
-    Alert.alert("Delete subscription?", subName, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          setDeletingSubId(subId)
-          const watchdog = setTimeout(() => {
-            setDeletingSubId((cur) => (cur === subId ? null : cur))
-          }, 20_000)
-          try {
-            // Subscriptions are represented as spends with category.kind === "subscription"
-            const res = await authedFetch(`/spends/${subId}`, { method: "DELETE" })
-            if (!res.ok && res.status !== 204) {
-              const txt = await res.text()
-              throw new Error(txt || `Request failed (${res.status})`)
-            }
-            setAllSpends((cur) => cur.filter((s) => s._id !== subId))
-            setExpandedSubscription((cur) => (cur === subId ? null : cur))
-            invalidateApiCache(['/spends', '/summary'])
-            await loadMonthSummary(dayjs().format("YYYY-MM"))
-          } catch (e) {
-            const msg = e instanceof Error ? e.message : "Unknown error"
-            Alert.alert("Delete failed", msg.includes("aborted") ? "Request timed out. Check EXPO_PUBLIC_API_URL." : msg)
-          } finally {
-            clearTimeout(watchdog)
-            setDeletingSubId(null)
-          }
-        },
-      },
-    ])
-  }
+      ])
+    },
+    [authedFetch, load],
+  )
 
   useEffect(() => {
     if (!isLoaded) return
     if (!isSignedIn) {
-      setAllSpends([])
       setRecentSpends([])
-      setRefreshing(false)
       setLoading(false)
-      setError("Please sign in to view subscriptions.")
+      setError("Please sign in to view home.")
       return
     }
     load()
   }, [isLoaded, isSignedIn, load])
 
-  const iconForName = useCallback((name: string) => {
-    const n = name.toLowerCase()
-    if (n.includes("spotify")) return icons.spotify
-    if (n.includes("notion")) return icons.notion
-    if (n.includes("figma")) return icons.figma
-    if (n.includes("github")) return icons.github
-    if (n.includes("adobe")) return icons.adobe
-    if (n.includes("claude")) return icons.claude
-    if (n.includes("canva")) return icons.canva
-    if (n.includes("openai")) return icons.openai
-    if (n.includes("dropbox")) return icons.dropbox
-    if (n.includes("medium")) return icons.medium
-    return icons.wallet
-  }, [])
-
-  const uiSubs: Subscription[] = useMemo(() => {
-    const catsById = new Map(categories.map((c) => [c._id, c]))
-    return allSpends
-      .filter((s) => {
-        if (!s.categoryId) return false
-        const c = catsById.get(s.categoryId)
-        return c?.kind === "subscription"
-      })
-      .map((s) => {
-        const c = s.categoryId ? catsById.get(s.categoryId) : undefined
-        return {
-          id: s._id,
-          icon: iconForName(s.title),
-          name: s.title,
-          plan: s.notes || undefined,
-          category: c?.name || "",
-          paymentMethod: "",
-          status: s.renewalAt ? "active" : "paused",
-          startDate: s.occurredAt,
-          price: s.amountCents / 100,
-          currency: s.currency,
-          billing: s.renewalAt ? "Recurring" : "One-time",
-          renewalDate: s.renewalAt ?? undefined,
-          color: undefined,
-        }
-      })
-  }, [allSpends, categories, iconForName])
-
-  const onRefresh = async () => {
-    if (!isLoaded || !isSignedIn) return
-    setRefreshing(true)
-    try {
-      await load()
-    } finally {
-      setRefreshing(false)
-    }
-  }
+  // Pull-to-refresh is implemented on other screens.
 
   const currentMonthTotalLabel = useMemo(() => {
     if (monthTotals.length === 0) return null
@@ -292,137 +178,85 @@ export default function Index() {
     return `${formatCurrency(amount, first.currency)}`
   }, [monthTotals])
 
+  const categoryNameById = useMemo(() => new Map(categories.map((c) => [c._id, c.name])), [categories])
+
   const openSpendModal = () => {
     setSpendModalOpen(true)
   }
   return (
-    <SafeScreen className="flex-1 bg-white p-5 pb-24"> 
-      <View>
-      <FlatList 
-      ListHeaderComponent={()=> (
-        <>
-        <View className="home-header">
-        <View className="home-user">
-          <Image source={{ uri: user?.imageUrl }} className="home-avatar" />
-          {user?.fullName ? <Text className="home-user-name">{user?.fullName}</Text> : <Text className="home-user-name">{user?.primaryEmailAddress?.emailAddress}</Text>}
-        </View> 
-        <Pressable
-          onPress={openSpendModal}
-          hitSlop={10}
-          className="h-11 w-11 items-center justify-center rounded-full bg-primary"
+    <SafeScreen className="flex-1 bg-[#EEEAE2]">
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        className="px-5 pt-6"
+        contentContainerStyle={{ paddingBottom: 140 }}
+      >
+        <View className="flex-row items-center justify-between">
+          <Image source={{ uri: user?.imageUrl }} className="h-12 w-12 rounded-full" />
+          <Pressable className="h-11 w-11 items-center justify-center rounded-2xl bg-[#E6E0D7]" hitSlop={10}>
+            <Ionicons name="notifications-outline" size={20} color="#111827" />
+          </Pressable>
+        </View>
+
+        <Text className="mt-4 text-3xl font-sans-extrabold text-black" numberOfLines={2}>
+          Welcome back, {user?.firstName || user?.fullName || "Friend"}
+        </Text>
+
+        <View
+          className="mt-4 rounded-3xl px-6 py-6"
+          style={{
+            backgroundColor: "#84AE93",
+            shadowColor: "#000",
+            shadowOpacity: 0.12,
+            shadowRadius: 12,
+            shadowOffset: { width: 0, height: 6 },
+          }}
         >
-          <Text className="text-white text-2xl leading-none">+</Text>
-        </Pressable>
+          <Text className="text-sm font-sans-semibold text-white/90">Your Balance</Text>
+          <Text className="mt-2 text-4xl font-sans-extrabold text-white">
+            {currentMonthTotalLabel ? currentMonthTotalLabel : formatCurrency(HOME_USER.amount)}
+          </Text>
+          <Text className="mt-2 text-sm font-sans-semibold text-white/90">{dayjs().format("MMMM D, YYYY")}</Text>
         </View>
 
-        <View className="home-balance-card">
-          <Text className="home-balance-label">Welcome back, {user?.fullName ? user?.fullName : user?.primaryEmailAddress?.emailAddress}</Text>
+        <View className="mt-6">
+          <Text className="text-xl font-sans-extrabold text-black">Recent Spends</Text>
+          <View className="mt-4 gap-4">
+            {recentSpends.slice(0, 3).map((s) => (
+              <ExpandableSpendCard
+                key={s._id}
+                spend={{
+                  title: s.title,
+                  type: s.type,
+                  amountCents: s.amountCents,
+                  currency: s.currency,
+                  occurredAt: s.occurredAt,
+                  renewalAt: s.renewalAt,
+                  categoryLabel: s.categoryId ? categoryNameById.get(s.categoryId) || "Uncategorized" : "Uncategorized",
+                  serviceKeyLabel: labelForServiceKey(s.serviceKey),
+                  notes: s.notes,
+                }}
+                icon={iconSourceForServiceKey(s.serviceKey)}
+                expanded={expandedSpendId === s._id}
+                onToggle={() => setExpandedSpendId((id) => (id === s._id ? null : s._id))}
+                onDeletePress={() => deleteOne(s)}
+                isDeleting={deletingId === s._id}
+              />
+            ))}
 
-          <View className="flex-row items-center justify-between">
-            <Text className="text-lg font-sans-bold text-primary">Your balance</Text>
-            <Text className="text-sm font-sans-medium text-muted-foreground">
-              {dayjs().format("MMM YYYY")}
-            </Text> 
-          </View>
-          <View className="home-balance-row">
-            <Text className="home-balance-amount">
-              {currentMonthTotalLabel ? currentMonthTotalLabel : formatCurrency(HOME_USER.amount)}
-            </Text>
-            <Text className="home-balance-date">{new Date().toLocaleDateString()}</Text>
+            <Pressable
+              onPress={openSpendModal}
+              className="mt-2 self-end flex-row items-center gap-3 rounded-full bg-[#2F9C8A] px-5 py-4"
+              style={{ shadowColor: "#000", shadowOpacity: 0.16, shadowRadius: 10, shadowOffset: { width: 0, height: 6 } }}
+            >
+              <View className="h-9 w-9 items-center justify-center rounded-full bg-white/20">
+                <Text className="text-white text-xl leading-none">+</Text>
+              </View>
+              <Text className="text-white font-sans-extrabold">Add spend</Text>
+            </Pressable>
           </View>
         </View>
+      </ScrollView>
 
-        <View className="mt-3">
-          <View className="flex-row items-center justify-between">
-            <Text className="text-lg font-sans-bold text-primary">Recent spends</Text>
-            <Text className="text-sm font-sans-medium text-muted-foreground">
-              {dayjs().format("MMM YYYY")}
-            </Text>
-          </View>
-          {recentSpends.length === 0 ? (
-            <Text className="home-empty-state">No spends yet</Text>
-          ) : (
-            <View className="mt-3 gap-2">
-              {recentSpends.map((s) => (
-                <View
-                  key={s._id}
-                  className="flex-row items-center justify-between rounded-2xl border border-border bg-card px-4 py-3"
-                >
-                  <View className="min-w-0 flex-1">
-                    <Text className="text-base font-sans-bold text-primary" numberOfLines={1}>
-                      {s.title}
-                    </Text>
-                    <Text className="text-sm font-sans-medium text-muted-foreground" numberOfLines={1}>
-                      {dayjs(s.occurredAt).format("MMM D")} {s.renewalAt ? `• renew ${dayjs(s.renewalAt).format("MMM D")}` : ""}
-                    </Text>
-                  </View>
-                  <View className="ml-3 items-end">
-                    <Text className="text-base font-sans-bold text-primary">
-                      {formatCurrency(s.amountCents / 100, s.currency)}
-                    </Text>
-                    <Pressable
-                      onPress={() => deleteSpend(s)}
-                      disabled={deletingSpendId === s._id}
-                      hitSlop={10}
-                      className={deletingSpendId === s._id ? "mt-1 rounded-full bg-destructive/60 px-3 py-1" : "mt-1 rounded-full bg-destructive px-3 py-1"}
-                    >
-                      <View className="flex-row items-center justify-center gap-2">
-                        {deletingSpendId === s._id && <ActivityIndicator color="#fff" size="small" />}
-                        <Text className="text-xs font-sans-semibold text-white">
-                          {deletingSpendId === s._id ? "Deleting…" : "Delete"}
-                        </Text>
-                      </View>
-                    </Pressable>
-                  </View>
-                </View>
-              ))}
-            </View>
-          )}
-        </View>
-
-        <View className="mb-5">
-          <ListHeading title="All spends" />
-          <FlatList 
-            data={UPCOMING_SUBSCRIPTIONS}
-            renderItem={({item}) => (
-              <UpcomingSubscriptionCard {...item}/>
-            )}
-            keyExtractor={(item) => item.id}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            ListEmptyComponent={<Text className="list-empty">No upcoming subscriptions</Text>}
-          />
-          </View>
-
-          <ListHeading title="All subscriptions" />
-        </>
-      )}
-      data={uiSubs}
-      renderItem={({item}) => ( 
-      <SubscriptionCard 
-        expanded={expandedSubscription === item.id} 
-        onPress={() => setExpandedSubscription((currentId) => currentId === item.id ? null : item.id)} 
-        onDeletePress={() => deleteSubscription(item.id, item.name)}
-        isDeleting={deletingSubId === item.id}
-        {...item}
-      />
-      )}
-      showsVerticalScrollIndicator={false}
-      ItemSeparatorComponent={() => <View className="h-4" />}
-      extraData={expandedSubscription}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-      keyExtractor={(item) => item.id}
-      ListEmptyComponent={
-        loading ? (
-          <Text className="list-empty">Loading…</Text>
-        ) : error ? (
-          <Text className="list-empty">{error}</Text>
-        ) : (
-          <Text className="list-empty">No subscriptions</Text>
-        )
-      }
-      />
-     
       <NewSpendModal
         visible={spendModalOpen}
         onRequestClose={() => setSpendModalOpen(false)}
@@ -431,7 +265,6 @@ export default function Index() {
         onSaved={load}
         initialOccurredAt={new Date()}
       />
-      </View>
     </SafeScreen>
   );
 }

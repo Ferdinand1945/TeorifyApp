@@ -1,9 +1,11 @@
 import NewSpendModal from '@/components/NewSpendModal'
+import ExpandableSpendCard from '@/components/ExpandableSpendCard'
 import { SafeScreen } from '@/components/SafeScreen'
-import SubscriptionCard from '@/components/SubscriptionCard'
-import { icons } from '@/constants/icons'
+import { iconSourceForServiceKey, labelForServiceKey } from '@/lib/spendDisplay'
+import { cancelReminderForSpendId, syncSubscriptionReminders } from '@/lib/subscriptionReminders'
 import { invalidateApiCache, useAuthedFetch } from '@/hooks/useAuthedFetch'
 import { useAuth } from '@clerk/expo'
+import { Ionicons } from '@expo/vector-icons'
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Alert,
@@ -11,6 +13,7 @@ import {
   Pressable,
   RefreshControl,
   Text,
+  TextInput,
   View,
 } from 'react-native'
 
@@ -50,6 +53,7 @@ const Subscriptions = () => {
   const [error, setError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [expandedSpendId, setExpandedSpendId] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
 
   const [spendModalOpen, setSpendModalOpen] = useState(false)
 
@@ -63,7 +67,9 @@ const Subscriptions = () => {
         throw new Error(txt || `Request failed (${spendsRes.status})`)
       }
       const spendsJson = (await spendsRes.json()) as { items: ApiSpend[] }
-      setItems(spendsJson.items || [])
+      const nextItems = spendsJson.items || []
+      setItems(nextItems)
+      await syncSubscriptionReminders(nextItems)
 
       if (catsRes.ok) {
         const catsJson = (await catsRes.json()) as { items: ApiCategory[] }
@@ -111,23 +117,15 @@ const Subscriptions = () => {
     return m
   }, [categories])
 
-  const iconForServiceKey = useCallback(
-    (serviceKey?: string | null) => {
-      const key = (serviceKey || '').toLowerCase()
-      if (key === 'spotify') return icons.spotify
-      if (key === 'github') return icons.github
-      if (key === 'notion') return icons.notion
-      if (key === 'dropbox') return icons.dropbox
-      if (key === 'openai') return icons.openai
-      if (key === 'adobe') return icons.adobe
-      if (key === 'medium') return icons.medium
-      if (key === 'figma') return icons.figma
-      if (key === 'claude') return icons.claude
-      if (key === 'canva') return icons.canva
-      return icons.wallet
-    },
-    [],
-  )
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return items
+    return items.filter((s) => {
+      const title = (s.title || '').toLowerCase()
+      const cat = s.categoryId ? (categoryNameById.get(s.categoryId) || '').toLowerCase() : ''
+      return title.includes(q) || cat.includes(q)
+    })
+  }, [categoryNameById, items, query])
 
   const deleteOne = useCallback(
     async (spend: ApiSpend) => {
@@ -149,6 +147,7 @@ const Subscriptions = () => {
                 throw new Error(txt || `Request failed (${res.status})`)
               }
               invalidateApiCache(['/spends', '/summary'])
+              await cancelReminderForSpendId(spend._id)
               setExpandedSpendId((cur) => (cur === spend._id ? null : cur))
               await load()
               Alert.alert('Deleted', `${spend.title} was deleted.`)
@@ -167,40 +166,49 @@ const Subscriptions = () => {
   )
 
   return (
-    <SafeScreen className="flex-1 bg-background p-5">
-      <View className="flex-row items-center justify-between mt-2 mb-5">
-        <Text className="text-xl text-black">All spends</Text>
-        <Pressable
-          onPress={openSpendModal}
-          hitSlop={10}
-          className="h-11 w-11 items-center justify-center rounded-full bg-primary"
-        >
-          <Text className="text-white text-2xl leading-none">+</Text>
+    <SafeScreen className="flex-1 bg-[#EEEAE2] px-5 pt-6">
+      <View className="flex-row items-center justify-between">
+        <Text className="text-3xl font-sans-extrabold text-black">All Spends</Text>
+        <Pressable className="h-11 w-11 items-center justify-center rounded-2xl bg-[#E6E0D7]" hitSlop={10}>
+          <Ionicons name="notifications-outline" size={20} color="#111827" />
         </Pressable>
       </View>
+
+      <View className="mt-4 flex-row items-center gap-3 rounded-2xl bg-[#E6E0D7] px-4 py-3">
+        <Ionicons name="search" size={18} color="#6B7280" />
+        <TextInput
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Search transactions..."
+          placeholderTextColor="#6B7280"
+          className="flex-1 text-sm font-sans-semibold text-black"
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+      </View>
+
       <FlatList 
         showsVerticalScrollIndicator={false} 
-        data={items} 
-        renderItem={({item}) => ( 
-          <SubscriptionCard
-            expanded={expandedSpendId === item._id}
-            onPress={() => setExpandedSpendId((cur) => (cur === item._id ? null : item._id))}
-            onDeletePress={() => {
-              if (!deletingId) deleteOne(item)
+        contentContainerStyle={{ paddingTop: 16, paddingBottom: 140 }}
+        data={filtered} 
+        renderItem={({ item }) => (
+          <ExpandableSpendCard
+            spend={{
+              title: item.title,
+              type: item.type,
+              amountCents: item.amountCents,
+              currency: item.currency,
+              occurredAt: item.occurredAt,
+              renewalAt: item.renewalAt,
+              categoryLabel: item.categoryId ? categoryNameById.get(item.categoryId) || 'Uncategorized' : 'Uncategorized',
+              serviceKeyLabel: labelForServiceKey(item.serviceKey),
+              notes: item.notes,
             }}
+            icon={iconSourceForServiceKey(item.serviceKey)}
+            expanded={expandedSpendId === item._id}
+            onToggle={() => setExpandedSpendId((id) => (id === item._id ? null : item._id))}
+            onDeletePress={() => deleteOne(item)}
             isDeleting={deletingId === item._id}
-            icon={iconForServiceKey(item.serviceKey)}
-            name={item.title}
-            price={item.amountCents / 100}
-            currency={item.currency}
-            billing="One-time"
-            renewalDate={item.renewalAt ?? undefined}
-            startDate={item.occurredAt}
-            status={item.type}
-            paymentMethod=""
-            category={item.categoryId ? categoryNameById.get(item.categoryId) || '' : ''}
-            plan={item.notes ?? undefined}
-            color={undefined}
           />
         )}
         keyExtractor={(item) => item._id} 
@@ -217,6 +225,14 @@ const Subscriptions = () => {
         }
         ListFooterComponent={<Text className="text-center text-sm text-gray-500">No more spends</Text>}
       />
+
+      <Pressable
+        onPress={openSpendModal}
+        className="absolute bottom-28 right-6 h-16 w-16 items-center justify-center rounded-full bg-[#2F9C8A]"
+        style={{ shadowColor: "#000", shadowOpacity: 0.18, shadowRadius: 10, shadowOffset: { width: 0, height: 6 } }}
+      >
+        <Text className="text-white text-3xl leading-none">+</Text>
+      </Pressable>
 
       <NewSpendModal
         visible={spendModalOpen}
