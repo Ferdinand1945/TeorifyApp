@@ -15,11 +15,11 @@ import summaryRouter from './routes/summary.js'
 import subscriptionsRouter from './routes/subscriptions.js'
 
 /**
- * Initialize the application: connect to the database, configure middleware, register routes, and start the HTTP server.
+ * Start the HTTP server after initializing the database and configuring middleware, routes, and error handling.
  *
- * Sets up security, CORS, JSON body parsing, request logging, and authentication middleware; exposes the `/health`
- * and `/me` endpoints; mounts the subscriptions and categories routers; registers a global error handler; and begins
- * listening on the configured port.
+ * Establishes a database connection, configures Express (security headers, CORS, JSON body limits, request logging,
+ * authentication), exposes the `/health` and `/me` endpoints, mounts application routers, registers the global error
+ * handler, and begins listening on the configured port.
  */
 async function main() {
   await connectToDatabase()

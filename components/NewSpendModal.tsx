@@ -37,6 +37,17 @@ type Props = {
   initialOccurredAt?: Date | null
 }
 
+/**
+ * Modal UI for creating a new spend entry, including optional service selection, receipt scanning, date picking, category selection with search, notes, and submission to the API.
+ *
+ * @param visible - Whether the modal is shown
+ * @param onRequestClose - Callback invoked to request closing the modal
+ * @param authedFetch - Authenticated fetch function used for API requests (receipt scan and submit)
+ * @param categories - List of available spend categories (used for category picker; only `expense` and `subscription` kinds are shown)
+ * @param onSaved - Optional callback invoked after a successful save
+ * @param initialOccurredAt - Initial value for the "Date" field (defaults to current date)
+ * @returns A React element that renders the "New spend" modal and its associated camera/category pickers
+ */
 export default function NewSpendModal({
   visible,
   onRequestClose,

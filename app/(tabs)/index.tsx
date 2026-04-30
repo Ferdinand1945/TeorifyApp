@@ -54,9 +54,9 @@ type ApiSpend = {
   updatedAt: string;
 };
 /**
- * Display the authenticated home screen with user header, balance summary, recent spends, upcoming subscriptions, and the full subscription list including a modal to create a new spend.
+ * Render the authenticated home screen with user header, balance, recent spends, upcoming subscriptions, and a full subscription list including a modal to create a new spend.
  *
- * Handles auth gating, initial data loading and refresh, per-item deletion workflows, subscription card expansion state, and the new-spend creation flow.
+ * Handles authentication gating, initial and pull-to-refresh data loading, per-item deletion workflows, and subscription card expansion state.
  *
  * @returns The root JSX element for the home screen
  */
