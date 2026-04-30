@@ -1,5 +1,5 @@
-import { Router } from 'express'
 import dayjs from 'dayjs'
+import { Router } from 'express'
 
 import { requireUser } from '../middleware/requireUser.js'
 import { SpendModel } from '../models/Spend.js'
@@ -34,21 +34,34 @@ async function loadActiveSubscriptions(userId: string) {
   return SubscriptionModel.find({ userId, isActive: true }).lean()
 }
 
+/**
+ * Aggregate expense amounts by currency.
+ *
+ * @param spends - Array of spend records (objects may contain `currency` and `amountCents`).
+ *   Missing or falsey `currency` is treated as `'SEK'` and is normalized to uppercase.
+ *   Missing or falsey `amountCents` is treated as `0`.
+ * @returns A Map whose keys are uppercase currency codes and whose values are the summed amounts in cents
+ */
 function spendsByCurrency(spends: unknown[]): Map<string, number> {
   const map = new Map<string, number>()
   for (const s of spends) {
-    const cur = String((s as any).currency || 'USD').toUpperCase()
+    const cur = String((s as any).currency || 'SEK').toUpperCase()
     const amt = Number((s as any).amountCents || 0)
     map.set(cur, (map.get(cur) || 0) + amt)
   }
   return map
 }
 
-/** Monthly-equivalent cents per currency for active subscriptions. */
+/**
+ * Compute monthly-equivalent subscription amounts in cents aggregated by currency.
+ *
+ * @param subs - Array of subscription-like objects; each may include `currency`, `amountCents`, and `billingCycle` (`weekly` | `monthly` | `yearly`)
+ * @returns A Map where keys are uppercased currency codes and values are the summed monthly-equivalent cents for subscriptions in that currency
+ */
 function subscriptionsMonthlyEquivalentByCurrency(subs: unknown[]): Map<string, number> {
   const map = new Map<string, number>()
   for (const s of subs) {
-    const cur = String((s as any).currency || 'USD').toUpperCase()
+    const cur = String((s as any).currency || 'SEK').toUpperCase()
     const amt = Number((s as any).amountCents || 0)
     const cycle = String((s as any).billingCycle || 'monthly')
 

@@ -2,14 +2,18 @@ import { SafeScreen } from '@/components/SafeScreen'
 import { useAuthedFetch } from '@/hooks/useAuthedFetch'
 import { formatCurrency } from '@/lib/utils'
 import { useAuth } from '@clerk/expo'
+import { Ionicons } from '@expo/vector-icons'
 import dayjs from 'dayjs'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import * as SecureStore from 'expo-secure-store'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
   Text,
+  TextInput,
   View,
 } from 'react-native'
 
@@ -47,6 +51,9 @@ const recurringHint: Record<Period, string> = {
   year: 'Subscriptions (annualized from monthly)',
 }
 
+const MONTHLY_INCOME_STORE_KEY = 'insights:monthlyIncome'
+const MONTHLY_INCOME_CURRENCY_STORE_KEY = 'insights:monthlyIncomeCurrency'
+
 const Insights = () => {
   const authedFetch = useAuthedFetch()
   const { isLoaded, isSignedIn } = useAuth()
@@ -57,12 +64,65 @@ const Insights = () => {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
+  const [monthlyIncome, setMonthlyIncome] = useState<number | null>(null)
+  const [monthlyIncomeCurrency, setMonthlyIncomeCurrency] = useState<string | null>(null)
+  const [editingIncome, setEditingIncome] = useState(false)
+  const [incomeDraft, setIncomeDraft] = useState('')
   const queryKey = useMemo(() => {
     if (period === 'week') return `/summary/week?date=${anchor.format('YYYY-MM-DD')}`
     if (period === 'month') return `/summary/month?month=${anchor.format('YYYY-MM')}`
     return `/summary/year?year=${anchor.format('YYYY')}`
   }, [anchor, period])
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      // 1) Local fallback (fast/offline-friendly)
+      try {
+        const [rawIncome, rawCurrency] = await Promise.all([
+          SecureStore.getItemAsync(MONTHLY_INCOME_STORE_KEY),
+          SecureStore.getItemAsync(MONTHLY_INCOME_CURRENCY_STORE_KEY),
+        ])
+        if (!cancelled) {
+          if (rawIncome) {
+            const n = Number(rawIncome)
+            if (Number.isFinite(n) && n >= 0) {
+              setMonthlyIncome(n)
+              setIncomeDraft(String(n))
+            }
+          }
+          if (rawCurrency) setMonthlyIncomeCurrency(rawCurrency)
+        }
+      } catch {
+        // ignore
+      }
+
+      // 2) Backend DB (source of truth)
+      try {
+        const res = await authedFetch('/settings/monthly-income')
+        if (!res.ok) return
+        const json = (await res.json()) as { monthlyIncomeCents: number | null; currency: string | null }
+        if (cancelled) return
+
+        const income = typeof json.monthlyIncomeCents === 'number' ? json.monthlyIncomeCents / 100 : null
+        setMonthlyIncome(income)
+        setMonthlyIncomeCurrency(json.currency ?? null)
+        setIncomeDraft(income == null ? '' : String(income))
+
+        try {
+          if (income != null) await SecureStore.setItemAsync(MONTHLY_INCOME_STORE_KEY, String(income))
+          if (json.currency) await SecureStore.setItemAsync(MONTHLY_INCOME_CURRENCY_STORE_KEY, json.currency)
+        } catch {
+          // ignore
+        }
+      } catch {
+        // ignore
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [authedFetch])
 
   const load = useCallback(async () => {
     setError(null)
@@ -125,7 +185,57 @@ const Insights = () => {
     setAnchor(dayjs())
   }
 
-  const grandTotalByCurrency = data?.totals ?? []
+  const grandTotalByCurrency = useMemo(() => data?.totals ?? [], [data])
+  const firstCurrency = grandTotalByCurrency[0]?.currency ?? 'SEK'
+  const incomeCurrency = (monthlyIncomeCurrency ?? firstCurrency).toUpperCase()
+  const monthTotal = useMemo(() => {
+    if (period !== 'month') return null
+    if (grandTotalByCurrency.length === 0) return null
+    // If multiple currencies exist, we show the first for now.
+    return grandTotalByCurrency[0].totalCents / 100
+  }, [grandTotalByCurrency, period])
+  const remainingAfterSpend = useMemo(() => {
+    if (period !== 'month') return null
+    if (monthlyIncome == null) return null
+    if (monthTotal == null) return null
+    return monthlyIncome - monthTotal
+  }, [monthTotal, monthlyIncome, period])
+
+  const startEditingIncome = () => {
+    setIncomeDraft(monthlyIncome == null ? '' : String(monthlyIncome))
+    setEditingIncome(true)
+  }
+
+  const saveIncome = async () => {
+    const normalized = incomeDraft.replace(',', '.').trim()
+    const n = Number(normalized)
+    if (!Number.isFinite(n) || n < 0) return
+    setMonthlyIncome(n)
+    setEditingIncome(false)
+    try {
+      await SecureStore.setItemAsync(MONTHLY_INCOME_STORE_KEY, String(n))
+    } catch {
+      // ignore
+    }
+
+    try {
+      await authedFetch('/settings/monthly-income', {
+        method: 'PUT',
+        body: JSON.stringify({
+          monthlyIncomeCents: Math.round(n * 100),
+          currency: incomeCurrency,
+        }),
+      })
+      setMonthlyIncomeCurrency(incomeCurrency)
+      try {
+        await SecureStore.setItemAsync(MONTHLY_INCOME_CURRENCY_STORE_KEY, incomeCurrency)
+      } catch {
+        // ignore
+      }
+    } catch {
+      // ignore; local value is still set
+    }
+  }
 
   return (
     <SafeScreen className="flex-1 bg-background p-5">
@@ -133,7 +243,46 @@ const Insights = () => {
       <Text className="text-sm text-gray-600 mb-5">
         Spending and recurring subscriptions for the period you select.
       </Text>
+      <View className="flex-row justify-between mb-4 rounded-2xl bg-white px-2 py-2">
+        <View className="flex-1 gap-1 pr-3">
+          <Text className="text-sm text-black">Add your monthly income</Text>
 
+          {editingIncome ? (
+            <TextInput
+              value={incomeDraft}
+              onChangeText={setIncomeDraft}
+              placeholder="Enter your monthly income"
+              keyboardType={Platform.OS === 'ios' ? 'decimal-pad' : 'numeric'}
+              className="text-sm text-black border border-gray-300 rounded-md px-3 py-2"
+              autoFocus
+              onSubmitEditing={saveIncome}
+              returnKeyType="done"
+            />
+          ) : (
+            <View className="gap-0.5">
+              <Text className="text-2xl font-semibold text-black">
+                {monthlyIncome == null ? '—' : formatCurrency(monthlyIncome, incomeCurrency)}
+              </Text>
+              {period === 'month' && remainingAfterSpend != null && (
+                <Text className="text-lg text-gray-800">
+                  Remaining after spends: {formatCurrency(remainingAfterSpend, incomeCurrency)}
+                </Text>
+              )}
+              {period !== 'month' && (
+                <Text className="text-xs text-gray-600">Switch to Month to see remaining after spends.</Text>
+              )}
+            </View>
+          )}
+        </View>
+
+        <Pressable
+          onPress={editingIncome ? saveIncome : startEditingIncome}
+          className="justify-end"
+          hitSlop={10}
+        >
+          <Ionicons name={editingIncome ? 'checkmark-circle' : 'add-circle'} size={40} color="black" />
+        </Pressable>
+      </View>
       <View className="flex-row rounded-2xl bg-white p-1 mb-4">
         {(['week', 'month', 'year'] as const).map((p) => (
           <Pressable

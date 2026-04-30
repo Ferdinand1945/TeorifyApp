@@ -10,15 +10,16 @@ import { requireUser } from './middleware/requireUser.js'
 import { errorHandler } from './middleware/errorHandler.js'
 import categoriesRouter from './routes/categories.js'
 import spendsRouter from './routes/spends.js'
+import settingsRouter from './routes/settings.js'
 import summaryRouter from './routes/summary.js'
 import subscriptionsRouter from './routes/subscriptions.js'
 
 /**
- * Initialize the application: connect to the database, configure middleware, register routes, and start the HTTP server.
+ * Start the HTTP server after initializing the database and configuring middleware, routes, and error handling.
  *
- * Sets up security, CORS, JSON body parsing, request logging, and authentication middleware; exposes the `/health`
- * and `/me` endpoints; mounts the subscriptions and categories routers; registers a global error handler; and begins
- * listening on the configured port.
+ * Establishes a database connection, configures Express (security headers, CORS, JSON body limits, request logging,
+ * authentication), exposes the `/health` and `/me` endpoints, mounts application routers, registers the global error
+ * handler, and begins listening on the configured port.
  */
 async function main() {
   await connectToDatabase()
@@ -56,6 +57,7 @@ async function main() {
   app.use('/subscriptions', subscriptionsRouter)
   app.use('/categories', categoriesRouter)
   app.use('/spends', spendsRouter)
+  app.use('/settings', settingsRouter)
   app.use('/summary', summaryRouter)
 
   app.use(errorHandler)
