@@ -248,6 +248,9 @@ export default function NewSpendModal({
         invalidateApiCache(["/spends", "/summary"])
         await onSaved?.()
         onRequestClose()
+      } else {
+        const txt = await res.text().catch(() => "")
+        Alert.alert("Failed to save spend", txt || `Request failed (${res.status})`)
       }
     } finally {
       setSavingSpend(false)
