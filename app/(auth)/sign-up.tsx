@@ -366,7 +366,7 @@ export default function Page() {
                 <Text className="auth-logo-mark-text">T</Text>
               </View>
               <View>
-                <Text className="auth-wordmark">Teorify</Text>
+                <Text className="auth-wordmark">LenApp</Text>
                 <Text className="auth-wordmark-sub">
                   Clear spending, calmer decisions
                 </Text>

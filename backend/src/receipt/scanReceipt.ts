@@ -13,7 +13,8 @@ let workerPromise: Promise<any> | null = null
 
 async function getWorker() {
   if (!workerPromise) {
-    workerPromise = createWorker('eng').catch((err) => {
+    // English + Swedish improves real Swedish retail receipts (ICA, Coop, etc.).
+    workerPromise = createWorker('eng+swe').catch((err) => {
       workerPromise = null
       throw err
     })
@@ -35,7 +36,7 @@ function detectCurrency(line: string): string | null {
 }
 
 function parseMoneyCandidate(raw: string): number | null {
-  const cleaned = raw.replace(/[^0-9.,]/g, '')
+  const cleaned = raw.replace(/\s/g, '').replace(/[^0-9.,]/g, '')
   if (!cleaned) return null
 
   const lastComma = cleaned.lastIndexOf(',')
@@ -52,7 +53,25 @@ function parseMoneyCandidate(raw: string): number | null {
 }
 
 function extractAmount(lines: string[]): { amount: number | null; currency: string | null } {
-  const keywords = ['TOTAL', 'AMOUNT', 'SUM', 'DUE', 'BALANCE', 'PAY', 'TO PAY', 'GRAND TOTAL', 'TOTALT']
+  const keywords = [
+    'TOTAL',
+    'AMOUNT',
+    'SUM',
+    'DUE',
+    'BALANCE',
+    'PAY',
+    'TO PAY',
+    'GRAND TOTAL',
+    'TOTALT',
+    'SUMMA',
+    'ATT BETALA',
+    'AT BETALA',
+    'BETALA',
+    'KÖPESUMMA',
+    'KOPESUMMA',
+    'BELOP',
+    'BELÖP',
+  ]
   const candidates: Array<{ score: number; amount: number; currency: string | null }> = []
 
   for (let i = 0; i < lines.length; i++) {
@@ -92,6 +111,12 @@ function extractDate(text: string): string | null {
   const m2 = text.match(/\b(\d{1,2})[-/](\d{1,2})[-/](20\d{2})\b/)
   if (m2) {
     const d = dayjs(`${m2[3]}-${m2[2].padStart(2, '0')}-${m2[1].padStart(2, '0')}`)
+    return d.isValid() ? d.format('YYYY-MM-DD') : null
+  }
+  // Swedish / EU dotted dates: DD.MM.YYYY
+  const m3 = text.match(/\b(\d{1,2})\.(\d{1,2})\.(20\d{2})\b/)
+  if (m3) {
+    const d = dayjs(`${m3[3]}-${m3[2].padStart(2, '0')}-${m3[1].padStart(2, '0')}`)
     return d.isValid() ? d.format('YYYY-MM-DD') : null
   }
   return null

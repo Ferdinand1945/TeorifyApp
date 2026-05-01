@@ -1,17 +1,19 @@
 {
   "expo": {
-    "name": "teorify.se",
-    "slug": "teorify.se",
+    "name": "LenApp",
+    "slug": "len-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "teorifyse",
+    "scheme": "lenapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "se.lenapp.app"
     },
     "android": {
+      "package": "se.lenapp.app",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",

@@ -12,9 +12,6 @@ import path from 'path'
 import { promises as fs } from 'fs'
 import { getActiveScopeForUser } from '../scope/activeScope.js'
 
-// `pdf-parse` ESM build doesn't expose a default export in this setup.
-const pdfParse = PDFParse as unknown as (data: Buffer) => Promise<{ text?: string }>
-
 const router = Router()
 
 const optionalDate = () =>
@@ -110,8 +107,15 @@ router.post('/scan-attachment', async (req, res) => {
   if (data.mimeType === 'application/pdf' || data.mimeType.toLowerCase().includes('pdf')) {
     const raw = data.base64.includes('base64,') ? data.base64.split('base64,').pop() || '' : data.base64
     const buf = Buffer.from(raw, 'base64')
-    const parsed = await pdfParse(buf)
-    const full = scanReceiptFromText(parsed.text || '')
+    const parser = new PDFParse({ data: new Uint8Array(buf) })
+    let text = ''
+    try {
+      const parsed = await parser.getText()
+      text = parsed.text || ''
+    } finally {
+      await parser.destroy()
+    }
+    const full = scanReceiptFromText(text)
     const result = {
       title: full.title ?? null,
       amount: full.amount ?? null,
