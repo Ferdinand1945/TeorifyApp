@@ -1,9 +1,9 @@
-import NewSpendModal from '@/components/NewSpendModal'
 import ExpandableSpendCard from '@/components/ExpandableSpendCard'
+import NewSpendModal from '@/components/NewSpendModal'
 import { SafeScreen } from '@/components/SafeScreen'
+import { invalidateApiCache, useAuthedFetch } from '@/hooks/useAuthedFetch'
 import { iconSourceForServiceKey, labelForServiceKey } from '@/lib/spendDisplay'
 import { cancelReminderForSpendId, syncSubscriptionReminders } from '@/lib/subscriptionReminders'
-import { invalidateApiCache, useAuthedFetch } from '@/hooks/useAuthedFetch'
 import { useAuth } from '@clerk/expo'
 import { Ionicons } from '@expo/vector-icons'
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
@@ -228,7 +228,7 @@ const Subscriptions = () => {
 
       <Pressable
         onPress={openSpendModal}
-        className="absolute bottom-28 right-6 h-16 w-16 items-center justify-center rounded-full bg-[#2F9C8A]"
+        className="absolute bottom-32 right-6 h-16 w-16 items-center justify-center rounded-full bg-[#2F9C8A]"
         style={{ shadowColor: "#000", shadowOpacity: 0.18, shadowRadius: 10, shadowOffset: { width: 0, height: 6 } }}
       >
         <Text className="text-white text-3xl leading-none">+</Text>

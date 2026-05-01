@@ -1,17 +1,21 @@
 import { ClerkProvider } from '@clerk/expo';
 import { tokenCache } from '@clerk/expo/token-cache';
 import { useFonts } from "expo-font";
-import { SplashScreen, Stack } from "expo-router";
+import { Stack } from "expo-router";
+import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
 import * as Notifications from "expo-notifications";
+import { Platform } from "react-native";
 import "../global.css";
 const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY!
 
 // Keep the splash screen visible while we load fonts.
 // Required before calling `hideAsync()` to avoid iOS "No native splash screen registered" errors.
-SplashScreen.preventAutoHideAsync().catch(() => {
-  // ignore: it can throw if called too late during fast refresh
-});
+if (Platform.OS !== "web") {
+  SplashScreen.preventAutoHideAsync().catch(() => {
+    // ignore: it can throw if called too late during fast refresh
+  });
+}
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -40,6 +44,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (!fontsLoaded) return
+    if (Platform.OS === "web") return
     SplashScreen.hideAsync().catch(() => {
       // ignore
     })

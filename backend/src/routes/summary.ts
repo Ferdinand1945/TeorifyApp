@@ -4,6 +4,7 @@ import { Router } from 'express'
 import { requireUser } from '../middleware/requireUser.js'
 import { SpendModel } from '../models/Spend.js'
 import { SubscriptionModel } from '../models/Subscription.js'
+import { getActiveScopeForUser } from '../scope/activeScope.js'
 
 const router = Router()
 
@@ -22,16 +23,17 @@ type TotalsRow = {
   subscriptionsMonthlyEquivalentCents?: number
 }
 
-async function loadSpendsInRange(userId: string, start: Date, end: Date) {
+async function loadSpendsInRange(userId: string, householdId: string | null, start: Date, end: Date) {
   return SpendModel.find({
     userId,
+    householdId: householdId ?? null,
     occurredAt: { $gte: start, $lte: end },
     type: 'expense',
   }).lean()
 }
 
-async function loadActiveSubscriptions(userId: string) {
-  return SubscriptionModel.find({ userId, isActive: true }).lean()
+async function loadActiveSubscriptions(userId: string, householdId: string | null) {
+  return SubscriptionModel.find({ userId, householdId: householdId ?? null, isActive: true }).lean()
 }
 
 /**
@@ -130,9 +132,10 @@ router.get('/month', async (req, res) => {
   }
   const end = start.endOf('month')
   const userId = req.userId!
+  const scope = await getActiveScopeForUser(userId)
   const [spends, subs] = await Promise.all([
-    loadSpendsInRange(userId, start.toDate(), end.toDate()),
-    loadActiveSubscriptions(userId),
+    loadSpendsInRange(userId, scope.householdId ?? null, start.toDate(), end.toDate()),
+    loadActiveSubscriptions(userId, scope.householdId ?? null),
   ])
 
   const spendsMap = spendsByCurrency(spends)
@@ -166,9 +169,10 @@ router.get('/week', async (req, res) => {
 
   const { start, end } = weekBoundsContainingDate(anchor)
   const userId = req.userId!
+  const scope = await getActiveScopeForUser(userId)
   const [spends, subs] = await Promise.all([
-    loadSpendsInRange(userId, start.toDate(), end.toDate()),
-    loadActiveSubscriptions(userId),
+    loadSpendsInRange(userId, scope.householdId ?? null, start.toDate(), end.toDate()),
+    loadActiveSubscriptions(userId, scope.householdId ?? null),
   ])
 
   const spendsMap = spendsByCurrency(spends)
@@ -199,9 +203,10 @@ router.get('/year', async (req, res) => {
   const end = dayjs(`${yearNum}-12-31`).endOf('day')
 
   const userId = req.userId!
+  const scope = await getActiveScopeForUser(userId)
   const [spends, subs] = await Promise.all([
-    loadSpendsInRange(userId, start.toDate(), end.toDate()),
-    loadActiveSubscriptions(userId),
+    loadSpendsInRange(userId, scope.householdId ?? null, start.toDate(), end.toDate()),
+    loadActiveSubscriptions(userId, scope.householdId ?? null),
   ])
 
   const spendsMap = spendsByCurrency(spends)

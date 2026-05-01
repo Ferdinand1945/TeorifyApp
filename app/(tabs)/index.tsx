@@ -1,12 +1,12 @@
 import "@/global.css";
 
-import NewSpendModal from "@/components/NewSpendModal";
 import ExpandableSpendCard from "@/components/ExpandableSpendCard";
+import NewSpendModal from "@/components/NewSpendModal";
 import { SafeScreen } from "@/components/SafeScreen";
 import { HOME_USER } from "@/constants/data";
-import { iconSourceForServiceKey, labelForServiceKey } from "@/lib/spendDisplay";
-import { syncSubscriptionReminders, cancelReminderForSpendId } from "@/lib/subscriptionReminders";
 import { invalidateApiCache, useAuthedFetch } from "@/hooks/useAuthedFetch";
+import { iconSourceForServiceKey, labelForServiceKey } from "@/lib/spendDisplay";
+import { cancelReminderForSpendId, syncSubscriptionReminders } from "@/lib/subscriptionReminders";
 import { formatCurrency } from "@/lib/utils";
 import { useAuth, useUser } from "@clerk/expo";
 import { Ionicons } from "@expo/vector-icons";

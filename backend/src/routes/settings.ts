@@ -1,7 +1,9 @@
 import { Router } from 'express'
+import mongoose from 'mongoose'
 
 import { requireUser } from '../middleware/requireUser.js'
 import { UserSettingsModel } from '../models/UserSettings.js'
+import { HouseholdModel } from '../models/Household.js'
 
 const router = Router()
 
@@ -68,6 +70,43 @@ router.put('/monthly-income', async (req, res) => {
     monthlyIncomeCents: updated?.monthlyIncomeCents ?? null,
     currency: updated?.monthlyIncomeCurrency ?? null,
   })
+})
+
+/**
+ * GET /settings/active-household
+ * Returns the active household for the authenticated user (or null).
+ */
+router.get('/active-household', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store')
+  const userId = req.userId!
+  const settings = await UserSettingsModel.findOne({ userId }).lean()
+  res.json({ householdId: (settings as any)?.activeHouseholdId ?? null })
+})
+
+/**
+ * PUT /settings/active-household
+ * Body: { householdId: string|null }
+ */
+router.put('/active-household', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store')
+  const userId = req.userId!
+
+  const householdId = (req.body as any)?.householdId
+  if (householdId !== null && householdId !== undefined) {
+    if (typeof householdId !== 'string' || !mongoose.isValidObjectId(householdId)) {
+      return res.status(400).json({ error: 'INVALID_HOUSEHOLD_ID' })
+    }
+    const hh = await HouseholdModel.findOne({ _id: householdId, memberUserIds: userId }).lean()
+    if (!hh) return res.status(404).json({ error: 'HOUSEHOLD_NOT_FOUND' })
+  }
+
+  const updated = await UserSettingsModel.findOneAndUpdate(
+    { userId },
+    { $set: { activeHouseholdId: householdId ?? null }, $setOnInsert: { userId } },
+    { upsert: true, new: true },
+  ).lean()
+
+  res.json({ householdId: (updated as any)?.activeHouseholdId ?? null })
 })
 
 export default router

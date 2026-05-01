@@ -112,6 +112,20 @@ function extractTitle(lines: string[]): string | null {
   return null
 }
 
+export function scanReceiptFromText(textRaw: string): ReceiptScanResult {
+  const text = normalizeText(textRaw || '')
+  const lines = text
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+
+  const { amount, currency } = extractAmount(lines)
+  const occurredAt = extractDate(text)
+  const title = extractTitle(lines)
+
+  return { text, amount, currency, occurredAt, title }
+}
+
 export async function scanReceiptFromBase64(opts: {
   base64: string
   mimeType?: string | null
@@ -121,13 +135,6 @@ export async function scanReceiptFromBase64(opts: {
   const base64 = opts.base64.includes('base64,') ? opts.base64.split('base64,').pop() || '' : opts.base64
   const { data } = await worker.recognize(`data:${opts.mimeType || 'image/jpeg'};base64,${base64}`)
 
-  const text = normalizeText(data.text || '')
-  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean)
-
-  const { amount, currency } = extractAmount(lines)
-  const occurredAt = extractDate(text)
-  const title = extractTitle(lines)
-
-  return { text, amount, currency, occurredAt, title }
+  return scanReceiptFromText(data.text || '')
 }
 

@@ -4,6 +4,7 @@ export type BillingCycle = 'weekly' | 'monthly' | 'yearly'
 
 export interface SubscriptionDoc {
   userId: string
+  householdId?: string | null
   name: string
   amountCents: number
   currency: string
@@ -19,6 +20,7 @@ export interface SubscriptionDoc {
 const subscriptionSchema = new Schema<SubscriptionDoc>(
   {
     userId: { type: String, required: true, index: true },
+    householdId: { type: String, required: false, default: null, index: true },
     name: { type: String, required: true, trim: true },
     amountCents: { type: Number, required: true, min: 0 },
     currency: { type: String, required: true, uppercase: true, trim: true },
@@ -31,7 +33,7 @@ const subscriptionSchema = new Schema<SubscriptionDoc>(
   { timestamps: true },
 )
 
-subscriptionSchema.index({ userId: 1, nextBillingDate: 1 })
+subscriptionSchema.index({ userId: 1, householdId: 1, nextBillingDate: 1 })
 
 export const SubscriptionModel =
   mongoose.models.Subscription || mongoose.model<SubscriptionDoc>('Subscription', subscriptionSchema)

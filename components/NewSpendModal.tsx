@@ -1,10 +1,13 @@
+import { icons } from "@/constants/icons"
 import { invalidateApiCache } from "@/hooks/useAuthedFetch"
 import { Ionicons } from "@expo/vector-icons"
 import DateTimePicker from "@react-native-community/datetimepicker"
-import { icons } from "@/constants/icons"
 import dayjs from "dayjs"
 import { CameraView, useCameraPermissions } from "expo-camera"
+import * as DocumentPicker from "expo-document-picker"
+import * as FileSystem from "expo-file-system"
 import { manipulateAsync, SaveFormat } from "expo-image-manipulator"
+import * as ImagePicker from "expo-image-picker"
 import React, { useEffect, useMemo, useRef, useState } from "react"
 import {
   ActivityIndicator,
@@ -13,10 +16,10 @@ import {
   Image,
   Keyboard,
   KeyboardAvoidingView,
-  ScrollView,
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   Text,
   TextInput,
   View,
@@ -26,6 +29,16 @@ export type SpendCategory = {
   _id: string
   kind: "subscription" | "expense" | "income"
   name: string
+}
+
+type SpendAttachment = {
+  id: string
+  url: string
+  mimeType: string
+  fileName?: string | null
+  kind?: "receipt" | "document" | "image" | null
+  sizeBytes?: number | null
+  createdAt: string | Date
 }
 
 type Props = {
@@ -86,6 +99,8 @@ export default function NewSpendModal({
   const [scanningReceipt, setScanningReceipt] = useState(false)
   const [pendingCameraOpen, setPendingCameraOpen] = useState(false)
   const [cameraInlineOpen, setCameraInlineOpen] = useState(false)
+  const [uploadingAttachment, setUploadingAttachment] = useState(false)
+  const [attachments, setAttachments] = useState<SpendAttachment[]>([])
 
   const [spendForm, setSpendForm] = useState({
     title: "",
@@ -110,6 +125,7 @@ export default function NewSpendModal({
       serviceKey: null,
       notes: "",
     })
+    setAttachments([])
     setDatePicker(null)
     setCategoryPickerOpen(false)
     setCategorySearch("")
@@ -117,6 +133,7 @@ export default function NewSpendModal({
     setScanningReceipt(false)
     setPendingCameraOpen(false)
     setCameraInlineOpen(false)
+    setUploadingAttachment(false)
   }, [initialOccurredAt, visible])
 
   const closeCamera = () => {
@@ -198,6 +215,159 @@ export default function NewSpendModal({
     }
   }
 
+  const scanAttachmentFromBase64 = async (opts: { base64: string; mimeType: string }) => {
+    if (scanningReceipt) return
+    setScanningReceipt(true)
+    try {
+      const res = await authedFetch("/spends/scan-attachment", {
+        method: "POST",
+        body: JSON.stringify({ base64: opts.base64, mimeType: opts.mimeType }),
+      })
+      if (!res.ok) {
+        const txt = await res.text()
+        throw new Error(txt || `Request failed (${res.status})`)
+      }
+      const json = (await res.json()) as {
+        result: { title?: string | null; amount?: number | null; currency?: string | null; occurredAt?: string | null }
+      }
+      const r = json.result
+      setSpendForm((f) => ({
+        ...f,
+        title: r.title ?? f.title,
+        amount: typeof r.amount === "number" ? String(r.amount) : f.amount,
+        currency: r.currency ? r.currency : f.currency,
+        occurredAt: r.occurredAt
+          ? (() => {
+              const [year, month, day] = r.occurredAt.split("-").map(Number)
+              return new Date(year, month - 1, day)
+            })()
+          : f.occurredAt,
+      }))
+      if (!r.amount && !r.title && !r.occurredAt) {
+        Alert.alert("Couldn't read receipt", "Try a clearer photo/PDF (higher resolution, less blur).")
+      }
+    } catch (e) {
+      Alert.alert("Receipt scan failed", e instanceof Error ? e.message : "Unknown error")
+    } finally {
+      setScanningReceipt(false)
+    }
+  }
+
+  const uploadAttachmentFromBase64 = async (opts: {
+    base64: string
+    mimeType: string
+    fileName?: string | null
+    kind?: "receipt" | "document" | "image" | null
+    sizeBytes?: number | null
+  }) => {
+    if (uploadingAttachment) return null
+    setUploadingAttachment(true)
+    try {
+      const res = await authedFetch("/spends/upload-attachment", {
+        method: "POST",
+        body: JSON.stringify({
+          base64: opts.base64,
+          mimeType: opts.mimeType,
+          fileName: opts.fileName ?? null,
+          kind: opts.kind ?? null,
+          sizeBytes: opts.sizeBytes ?? null,
+        }),
+      })
+      if (!res.ok) {
+        const txt = await res.text().catch(() => "")
+        throw new Error(txt || `Upload failed (${res.status})`)
+      }
+      const json = (await res.json()) as { attachment: SpendAttachment }
+      setAttachments((a) => [json.attachment, ...a])
+      return json.attachment
+    } catch (e) {
+      Alert.alert("Upload failed", e instanceof Error ? e.message : "Unknown error")
+      return null
+    } finally {
+      setUploadingAttachment(false)
+    }
+  }
+
+  const attachFromLibrary = async () => {
+    if (uploadingAttachment || scanningReceipt || savingSpend) return
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync()
+    if (!perm.granted) {
+      Alert.alert("Permission needed", "Enable photo library permission to attach a receipt image.")
+      return
+    }
+    const picked = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      quality: 0.85,
+      base64: true,
+    })
+    if (picked.canceled) return
+    const asset = picked.assets?.[0]
+    if (!asset?.base64) {
+      Alert.alert("Couldn't attach image", "Try again (failed to read the file).")
+      return
+    }
+
+    const attachment = await uploadAttachmentFromBase64({
+      base64: asset.base64,
+      mimeType: asset.mimeType ?? "image/jpeg",
+      fileName: asset.fileName ?? null,
+      kind: "image",
+      sizeBytes: asset.fileSize ?? null,
+    })
+    if (!attachment) return
+
+    Alert.alert("Use receipt data?", "Prefill title/amount/date from this image?", [
+      { text: "Not now", style: "cancel" },
+      {
+        text: "Use data",
+        onPress: async () => {
+          const resized = await manipulateAsync(asset.uri, [{ resize: { width: 1280 } }], {
+            compress: 0.65,
+            format: SaveFormat.JPEG,
+            base64: true,
+          })
+          if (resized.base64) await scanAttachmentFromBase64({ base64: resized.base64, mimeType: "image/jpeg" })
+        },
+      },
+    ])
+  }
+
+  const attachPdf = async () => {
+    if (uploadingAttachment || scanningReceipt || savingSpend) return
+    const picked = await DocumentPicker.getDocumentAsync({
+      type: ["application/pdf"],
+      copyToCacheDirectory: true,
+      multiple: false,
+    })
+    if (picked.canceled) return
+    const f = picked.assets?.[0]
+    if (!f?.uri) return
+
+    const base64 = await FileSystem.readAsStringAsync(f.uri, { encoding: "base64" })
+    const attachment = await uploadAttachmentFromBase64({
+      base64,
+      mimeType: f.mimeType ?? "application/pdf",
+      fileName: f.name ?? null,
+      kind: "document",
+      sizeBytes: f.size ?? null,
+    })
+    if (!attachment) return
+
+    Alert.alert("Use receipt data?", "Prefill title/amount/date from this PDF?", [
+      { text: "Not now", style: "cancel" },
+      { text: "Use data", onPress: async () => scanAttachmentFromBase64({ base64, mimeType: "application/pdf" }) },
+    ])
+  }
+
+  const openAttachmentMenu = async () => {
+    if (uploadingAttachment || scanningReceipt || savingSpend) return
+    Alert.alert("Attach receipt", "Choose a file type.", [
+      { text: "Photo", onPress: attachFromLibrary },
+      { text: "PDF", onPress: attachPdf },
+      { text: "Cancel", style: "cancel" },
+    ])
+  }
+
   const openCamera = async () => {
     if (scanningReceipt) return
     const granted = cameraPermission?.granted
@@ -239,6 +409,7 @@ export default function NewSpendModal({
         categoryId: spendForm.categoryId,
         serviceKey: spendForm.serviceKey,
         notes: spendForm.notes.trim() ? spendForm.notes.trim() : null,
+        attachments,
         occurredAt: spendForm.occurredAt ? dayjs(spendForm.occurredAt).format("YYYY-MM-DD") : undefined,
         renewalAt: spendForm.renewalAt ? dayjs(spendForm.renewalAt).format("YYYY-MM-DD") : undefined,
       }
@@ -263,14 +434,23 @@ export default function NewSpendModal({
         <Pressable className="flex-1" onPress={() => Keyboard.dismiss()}>
           <KeyboardAvoidingView
             behavior={Platform.OS === "ios" ? "padding" : undefined}
-            className="flex-1 bg-[#F6F7FF] p-5"
+            className="flex-1 bg-[#EEEAE2] p-5"
           >
             <View className="flex-row items-center justify-between mb-4">
               <View className="flex-row items-center gap-3">
-                <Text className="text-xl font-semibold text-black">New spend</Text>
+                <Text className="text-2xl font-semibold text-black">New spend</Text>
                 <Pressable onPress={openCamera} hitSlop={10} disabled={savingSpend || scanningReceipt}>
                   <View className={savingSpend || scanningReceipt ? "opacity-50" : ""}>
-                    <Ionicons name="camera" size={22} color="#111827" />
+                    <Ionicons name="camera" size={32} color="#111827" />
+                  </View>
+                </Pressable>
+                <Pressable
+                  onPress={openAttachmentMenu}
+                  hitSlop={10}
+                  disabled={savingSpend || scanningReceipt || uploadingAttachment}
+                >
+                  <View className={savingSpend || scanningReceipt || uploadingAttachment ? "opacity-50" : ""}>
+                    <Ionicons name="attach" size={30} color="#111827" />
                   </View>
                 </Pressable>
               </View>
@@ -376,9 +556,9 @@ export default function NewSpendModal({
                   </Pressable>
                   <Pressable
                     onPress={() => setSpendForm((f) => ({ ...f, occurredAt: null }))}
-                    className="rounded-xl bg-gray-200 px-4 py-3"
+                    className="rounded-xl bg-cyan-600 px-4 py-3"
                   >
-                    <Text className="text-black font-semibold">Clear</Text>
+                    <Text className="text-white font-semibold">Clear</Text>
                   </Pressable>
                 </View>
               </View>
@@ -401,9 +581,9 @@ export default function NewSpendModal({
                   </Pressable>
                   <Pressable
                     onPress={() => setSpendForm((f) => ({ ...f, renewalAt: null }))}
-                    className="rounded-xl bg-gray-200 px-4 py-3"
+                    className="rounded-xl bg-cyan-600 px-4 py-3"
                   >
-                    <Text className="text-black font-semibold">Clear</Text>
+                    <Text className="text-white font-semibold">Clear</Text>
                   </Pressable>
                 </View>
               </View>
@@ -446,15 +626,68 @@ export default function NewSpendModal({
                   className="rounded-xl bg-white px-4 py-3 min-h-[96px]"
                 />
               </View>
+
+              <View>
+                <View className="flex-row items-center justify-between mb-1">
+                  <Text className="text-sm text-gray-600">Attachments</Text>
+                  {uploadingAttachment ? (
+                    <View className="flex-row items-center gap-2">
+                      <ActivityIndicator />
+                      <Text className="text-xs text-gray-600">Uploading…</Text>
+                    </View>
+                  ) : null}
+                </View>
+                {attachments.length === 0 ? (
+                  <Pressable onPress={openAttachmentMenu} className="rounded-xl bg-white px-4 py-4">
+                    <Text className="text-gray-600">Add a photo or PDF…</Text>
+                  </Pressable>
+                ) : (
+                  <View className="gap-2">
+                    {attachments.slice(0, 3).map((a) => (
+                      <View key={a.id} className="rounded-xl bg-white px-4 py-3 flex-row items-center justify-between">
+                        <View className="flex-1 pr-3">
+                          <Text className="text-black font-semibold" numberOfLines={1}>
+                            {a.fileName || a.mimeType}
+                          </Text>
+                          <Text className="text-xs text-gray-500" numberOfLines={1}>
+                            {a.mimeType}
+                          </Text>
+                        </View>
+                        <View className="flex-row items-center gap-3">
+                          <Pressable
+                            onPress={async () => {
+                              // Use stored file URL when possible for scan; fall back to no-op if missing.
+                              // We scan from the picked base64 at attach time; this is just a shortcut for later.
+                              Alert.alert("Tip", "Re-scan by re-attaching the file (keeps things fast).")
+                            }}
+                            hitSlop={10}
+                          >
+                            <Ionicons name="scan-outline" size={20} color="#111827" />
+                          </Pressable>
+                          <Pressable
+                            onPress={() => setAttachments((list) => list.filter((x) => x.id !== a.id))}
+                            hitSlop={10}
+                          >
+                            <Ionicons name="trash-outline" size={20} color="#b91c1c" />
+                          </Pressable>
+                        </View>
+                      </View>
+                    ))}
+                    {attachments.length > 3 ? (
+                      <Text className="text-xs text-gray-500">Showing 3 of {attachments.length} attachments.</Text>
+                    ) : null}
+                  </View>
+                )}
+              </View>
             </View>
 
             <View className="mt-6 flex-row gap-3">
-              <Pressable onPress={closeSpend} className="flex-1 rounded-xl bg-gray-200 px-4 py-3" disabled={savingSpend}>
+              <Pressable onPress={closeSpend} className="flex-1 rounded-4xl bg-gray-300 px-4 py-4" disabled={savingSpend}>
                 <Text className="text-center font-semibold text-black">Cancel</Text>
               </Pressable>
               <Pressable
                 onPress={submitSpend}
-                className={savingSpend ? "flex-1 rounded-xl bg-primary/70 px-4 py-3" : "flex-1 rounded-xl bg-primary px-4 py-3"}
+                className={savingSpend ? "flex-1 rounded-xl bg-green-900 px-4 py-4" : "flex-1 rounded-4xl bg-[#2F9C8A] px-4 py-4"}
                 disabled={savingSpend}
               >
                 <View className="flex-row items-center justify-center gap-2">
@@ -496,7 +729,7 @@ export default function NewSpendModal({
                       value={categorySearch}
                       onChangeText={setCategorySearch}
                       placeholder="Search categories…"
-                      className="rounded-xl bg-white px-4 py-3"
+                      className="rounded-xl bg-white px-4 py-4"
                       autoCapitalize="none"
                       autoCorrect={false}
                       clearButtonMode="while-editing"
@@ -520,7 +753,7 @@ export default function NewSpendModal({
                             setCategoryPickerOpen(false)
                             setCategorySearch("")
                           }}
-                          className={selected ? "rounded-xl bg-primary px-4 py-3" : "rounded-xl bg-white px-4 py-3"}
+                          className={selected ? "rounded-xl bg-primary px-4 py-4" : "rounded-xl bg-white px-4 py-4"}
                         >
                           <Text className={selected ? "text-white font-semibold" : "text-black font-semibold"}>
                             {item.name}
@@ -550,7 +783,7 @@ export default function NewSpendModal({
                         const res = await requestCameraPermission()
                         if (res.granted) setCameraInlineOpen(true)
                       }}
-                      className="mt-4 rounded-xl bg-white px-4 py-3"
+                      className="mt-4 rounded-xl bg-white px-4 py-4"
                     >
                       <Text className="text-black font-semibold">Grant permission</Text>
                     </Pressable>
@@ -562,7 +795,7 @@ export default function NewSpendModal({
                     <Pressable
                       onPress={() => setCameraInlineOpen(false)}
                       disabled={scanningReceipt}
-                      className={scanningReceipt ? "rounded-xl bg-white/20 px-4 py-3" : "rounded-xl bg-white/30 px-4 py-3"}
+                      className={scanningReceipt ? "rounded-xl bg-white/20 px-4 py-4" : "rounded-xl bg-white/30 px-4 py-4"}
                     >
                       <Text className="text-white font-semibold">Cancel</Text>
                     </Pressable>
@@ -610,7 +843,7 @@ export default function NewSpendModal({
                   const res = await requestCameraPermission()
                   if (res.granted) setPendingCameraOpen(true)
                 }}
-                className="mt-4 rounded-xl bg-white px-4 py-3"
+                className="mt-4 rounded-xl bg-white px-4 py-4"
               >
                 <Text className="text-black font-semibold">Grant permission</Text>
               </Pressable>
@@ -622,7 +855,7 @@ export default function NewSpendModal({
               <Pressable
                 onPress={closeCamera}
                 disabled={scanningReceipt}
-                className={scanningReceipt ? "rounded-xl bg-white/20 px-4 py-3" : "rounded-xl bg-white/30 px-4 py-3"}
+                className={scanningReceipt ? "rounded-xl bg-white/20 px-4 py-4" : "rounded-xl bg-white/30 px-4 py-4"}
               >
                 <Text className="text-white font-semibold">Cancel</Text>
               </Pressable>
